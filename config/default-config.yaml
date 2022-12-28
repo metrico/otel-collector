@@ -1,0 +1,38 @@
+receivers:
+  otlp/spanmetrics:
+    protocols:
+      grpc:
+        endpoint: 'localhost:12345'
+  otlp:
+    protocols:
+      grpc:
+      http:
+  jaeger:
+    protocols:
+      grpc:
+      thrift_http:
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+      load:
+      memory:
+      disk:
+      filesystem:
+      network:
+processors:
+  batch:
+    send_batch_size: 1000
+    timeout: 10s
+extensions:
+  zpages: {}
+exporters:
+  clickhousetraces:
+    datasource: tcp://localhost:9000/?database=cloki
+service:
+  extensions: [zpages]
+  pipelines:
+    traces:
+      receivers: [jaeger, otlp]
+      processors: [batch]
+      exporters: [clickhousetraces]
