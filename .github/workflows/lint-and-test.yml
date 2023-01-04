@@ -4,6 +4,10 @@ on:
   pull_request:
     branches:
       - '**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: manual
 
 jobs:
   lint-and-test:
