@@ -290,16 +290,3 @@ func (e *logsExporter) convertAttributesToLabels(attributes pcommon.Map) model.L
 
 	return ls
 }
-
-func (e *logsExporter) convertAttributesAndMerge(logAttrs pcommon.Map, resourceAttrs pcommon.Map) (mergedAttributes model.LabelSet, dropped bool) {
-	logRecordAttributes := e.convertAttributesToLabels(logAttrs)
-	resourceAttributes := e.convertAttributesToLabels(resourceAttrs)
-
-	// This prometheus model.labelset Merge function overwrites	the logRecordAttributes with resourceAttributes
-	mergedAttributes = logRecordAttributes.Merge(resourceAttributes)
-
-	if len(mergedAttributes) == 0 {
-		return nil, true
-	}
-	return mergedAttributes, false
-}
