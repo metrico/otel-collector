@@ -20,3 +20,70 @@ otel-collector:
       - "14268:14268"   # Jaeger thrift HTTP
     restart: on-failure
 ```
+
+### Config
+```
+receivers:
+  fluentforward:
+    endpoint: 0.0.0.0:24224
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  jaeger:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:14250
+      thrift_http:
+        endpoint: 0.0.0.0:14268
+  zipkin:
+    endpoint: 0.0.0.0:9411
+processors:
+  batch:
+    send_batch_size: 100000
+    timeout: 5s
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: 1800
+    spike_limit_mib: 500
+  resourcedetection/system:
+    detectors: [ "system" ]
+    system:
+      hostname_sources: [ "os" ]
+  resource:
+    attributes:
+      - key: service.name
+        value: "serviceName"
+        action: upsert
+exporters:
+  qryn:
+    dsn: tcp://clickhouse:9000/cloki
+    timeout: 10s
+    sending_queue:
+      queue_size: 100
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+extensions:
+  health_check:
+  pprof:
+  zpages:
+  memory_ballast:
+    size_mib: 1000
+
+service:
+  extensions: [ pprof, zpages, health_check ]
+  pipelines:
+    logs:
+      receivers: [ fluentforward, otlp ]
+      processors: [ memory_limiter, resourcedetection/system, resource, batch ]
+      exporters: [ qryn ]
+    traces:
+      receivers: [ otlp ]
+      processors: [ memory_limiter, resourcedetection/system, resource, batch ]
+      exporters: [ qryn ]
+```
