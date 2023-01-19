@@ -81,7 +81,7 @@ import (
 	"go.opentelemetry.io/collector/receiver/otlpreceiver"
 	"go.uber.org/multierr"
 
-	"github.com/Cluas/otel-collector/exporter/clickhousetracesexporter"
+	"github.com/metrico/otel-collector/exporter/qrynexporter"
 )
 
 func components() (component.Factories, error) {
@@ -149,7 +149,7 @@ func components() (component.Factories, error) {
 	}
 
 	exporters := []component.ExporterFactory{
-		clickhousetracesexporter.NewFactory(),
+		qrynexporter.NewFactory(),
 		carbonexporter.NewFactory(),
 		fileexporter.NewFactory(),
 		jaegerexporter.NewFactory(),

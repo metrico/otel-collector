@@ -1,15 +1,15 @@
-# Clickhouse Exporter
+# qryn Exporter
 
 | Status                   |                       |
 | ------------------------ |-----------------------|
-| Stability                | [beta]                |
-| Supported pipeline types | traces                |
-| Distributions            | [lb]                  |
+| Stability                | [alpha]               |
+| Supported pipeline types | traces, logs, metrics |
+| Distributions            | [qryn]                |
 
 
 # Configuration options:
 
-- `datasource` (required): Clickhouse's dsn.
+- `dsn` (required): Clickhouse's dsn.
 
 # Example:
 ## Simple Trace Data
@@ -19,14 +19,14 @@ receivers:
   examplereceiver:
 
 exporters:
-  clickhousetraces:
-    datasource: tcp://localhost:9000/?database=cloki
+  qryn:
+    dsn: tcp://localhost:9000/?database=cloki
 
 service:
   pipelines:
     traces:
       receivers: [examplereceiver]
-      exporters: [clickhousetraces]
+      exporters: [qryn]
 ```
 
 [beta]:https://github.com/open-telemetry/opentelemetry-collector#beta

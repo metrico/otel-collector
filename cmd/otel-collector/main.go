@@ -17,7 +17,7 @@ func main() {
 
 	info := component.BuildInfo{
 		Command:     "otel-collector",
-		Description: "OTEL Collector",
+		Description: "qryn OTEL Collector",
 		Version:     "latest",
 	}
 
