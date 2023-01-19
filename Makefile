@@ -1,5 +1,5 @@
 COMMIT_SHA ?= $(shell git rev-parse HEAD)
-REPONAME ?= signoz
+REPONAME ?= metrico
 IMAGE_NAME ?= "otel-collector"
 CONFIG_FILE ?= ./config/default-config.yaml
 DOCKER_TAG ?= latest
@@ -39,10 +39,10 @@ fmt:
 	@echo Running go fmt on query service ...
 	@$(GOFMT) -e -s -l -w .
 
-.PHONY: build-signoz-collector
-build-signoz-collector:
+.PHONY: build-qryn-collector
+build-qryn-collector:
 	@echo "------------------"
-	@echo "--> Building signoz collector docker image"
+	@echo "--> Building qryn collector docker image"
 	@echo "------------------"
 	docker buildx build --progress plane \
 		--no-cache -f cmd/otel-collector/Dockerfile \
