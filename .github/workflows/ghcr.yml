@@ -1,0 +1,44 @@
+name: Docker-Build-ghcr
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+    - uses: actions/checkout@v3
+    - name: Get Timestamp
+      id: time
+      uses: nanzm/get-time-action@v1.1
+      with:
+        timeZone: 0
+        format: 'YYYYMMDDHHmmss'
+    - run: |
+       echo "TIME=${{ steps.time.outputs.time }}" >> $GITHUB_ENV
+        
+    - name: Log in to the Container registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v2.0.0
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Docker Build and push
+      if: github.event_name != 'pull_request'
+      uses: docker/build-push-action@v3.3.0
+      with:
+        context: ./cmd/otel-collector
+        push: true
+        tags: |
+           ghcr.io/metrico/qryn-otel-collector:latest
+           ghcr.io/metrico/qryn-otel-collector:${{ env.TIME }}
