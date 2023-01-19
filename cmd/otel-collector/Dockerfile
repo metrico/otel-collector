@@ -1,5 +1,5 @@
 # Builder stage
-FROM golang:1.18-alpine as build
+FROM golang:1.18-alpine as builder
 RUN apk --update add ca-certificates
 
 WORKDIR /src
@@ -23,4 +23,3 @@ COPY --from=builder /out/otel-collector /
 EXPOSE 4317 4318
 ENTRYPOINT ["/otel-collector"]
 CMD ["--config", "/etc/otel/config.yaml"]
-
