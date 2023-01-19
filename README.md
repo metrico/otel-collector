@@ -15,17 +15,16 @@ otel-collector:
     ports:
       - "4317:4317"     # OTLP gRPC receiver
       - "4318:4318"     # OTLP HTTP receiver
-      - "9411:9411"     # Zipkin port
       - "14250:14250"   # Jaeger gRPC
       - "14268:14268"   # Jaeger thrift HTTP
+      - "9411:9411"     # Zipkin port
+      - "24224:24224".  # Fluent Forward
     restart: on-failure
 ```
 
 ### Config
 ```
 receivers:
-  fluentforward:
-    endpoint: 0.0.0.0:24224
   otlp:
     protocols:
       grpc:
@@ -40,6 +39,8 @@ receivers:
         endpoint: 0.0.0.0:14268
   zipkin:
     endpoint: 0.0.0.0:9411
+  fluentforward:
+    endpoint: 0.0.0.0:24224
 processors:
   batch:
     send_batch_size: 100000
