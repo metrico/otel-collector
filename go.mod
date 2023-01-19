@@ -281,7 +281,7 @@ require (
 	github.com/prometheus/client_golang v1.14.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common/sigv4 v0.1.0 // indirect
-	github.com/prometheus/exporter-toolkit v0.7.1 // indirect
+	github.com/prometheus/exporter-toolkit v0.7.3 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/prometheus/prometheus v1.8.2-0.20220303173753-edfe657b5405 // indirect
 	github.com/prometheus/statsd_exporter v0.22.7 // indirect
