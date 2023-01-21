@@ -15,6 +15,7 @@ IMPORT_LOG=.import.log
 
 .PHONY: install-tools
 install-tools:
+        go mod tidy
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.42.0
 
 .DEFAULT_GOAL := test-and-lint
