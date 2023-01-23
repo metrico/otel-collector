@@ -2,7 +2,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//       http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -54,7 +54,7 @@ func createTracesExporter(
 ) (component.TracesExporter, error) {
 
 	c := cfg.(*Config)
-	oce, err := newTracesExporter(params.Logger, c)
+	oce, err := newTracesExporter(ctx, params.Logger, c)
 	if err != nil {
 		return nil, fmt.Errorf("cannot configure qryn traces exporter: %w", err)
 	}
@@ -96,7 +96,6 @@ func createLogsExporter(
 	)
 }
 
-
 // createMetricsExporter creates a new exporter for metrics.
 // Metrics are directly insert into clickhouse.
 func createMetricsExporter(
@@ -121,4 +120,3 @@ func createMetricsExporter(
 		exporterhelper.WithRetry(c.RetrySettings),
 	)
 }
-

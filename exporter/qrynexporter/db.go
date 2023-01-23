@@ -18,33 +18,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/ClickHouse/ch-go/proto"
 )
 
 const (
-	tracesInsertSQL = `
-  INSERT INTO traces_input (
-    trace_id,
-    span_id, 
-    parent_id, 
-    name,
-    timestamp_ns, 
-    duration_ns, 
-    service_name, 
-    payload_type, 
-    payload, 
-    tags
-  ) VALUES (
-    ?,
-    ?,
-    ?,
-    ?,
-    ?,
-    ?,
-    ?,
-    ?,
-    ?,
-    ?
-  )`
 	samplesInsertSQL = `
   INSERT INTO samples_v3 (
     fingerprint, 
@@ -71,6 +48,20 @@ const (
   )`
 )
 
+// Trace represent trace model
+type Trace struct {
+	TraceID     string
+	SpanID      string
+	ParentID    string
+	Name        string
+	TimestampNs int64
+	DurationNs  int64
+	ServiceName string
+	PayloadType int8
+	Payload     string
+	Tags        [][]string
+}
+
 // Note: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
 // We need to align with the schema here.
 //
@@ -89,17 +80,18 @@ const (
 //	tags Array(Tuple(String, String))
 //
 // ) Engine=Null
-type Trace struct {
-	TraceID     string
-	SpanID      string
-	ParentID    string
-	Name        string
-	TimestampNs int64
-	DurationNs  int64
-	ServiceName string
-	PayloadType int8
-	Payload     string
-	Tags        [][]any
+
+type TracesSchema struct {
+	TraceID     proto.ColStr
+	SpanID      proto.ColStr
+	ParentID    proto.ColStr
+	Name        proto.ColStr
+	TimestampNs proto.ColInt64
+	DurationNs  proto.ColInt64
+	ServiceName proto.ColStr
+	PayloadType proto.ColInt8
+	Payload     proto.ColStr
+	Tags        proto.ColArr[proto.ColTuple]
 }
 
 // Sample represent sample data

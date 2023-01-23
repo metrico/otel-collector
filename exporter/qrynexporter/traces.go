@@ -16,11 +16,11 @@ package qrynexporter
 
 import (
 	"context"
-	"database/sql"
 	"encoding/base64"
 	"fmt"
 
-	_ "github.com/ClickHouse/clickhouse-go/v2" // For register database driver.
+	"github.com/ClickHouse/ch-go"
+	"github.com/ClickHouse/ch-go/proto"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	conventions "go.opentelemetry.io/collector/model/semconv/v1.5.0"
@@ -34,19 +34,28 @@ var marshaler = &ptrace.JSONMarshaler{}
 // tracesExporter for writing spans to ClickHouse
 type tracesExporter struct {
 	logger *zap.Logger
-	db     *sql.DB
+
+	client *ch.Client
 }
 
 // newTracesExporter returns a SpanWriter for the database
-func newTracesExporter(logger *zap.Logger, cfg *Config) (*tracesExporter, error) {
-	db, err := sql.Open("clickhouse", cfg.DSN)
+func newTracesExporter(ctx context.Context, logger *zap.Logger, cfg *Config) (*tracesExporter, error) {
+	opts, err := parseDSN(cfg.DSN)
+	if err != nil {
+		return nil, err
+	}
+	client, err := ch.Dial(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	return &tracesExporter{
 		logger: logger,
-		db:     db,
+		client: client,
 	}, nil
+}
+
+func newTraceSchema() *TracesSchema {
+	return nil
 }
 
 // traceDataPusher implements OTEL exporterhelper.traceDataPusher
@@ -56,75 +65,96 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 	if err != nil {
 		return err
 	}
-	return Transaction(ctx, e.db, func(tx *sql.Tx) error {
-		statement, err := tx.PrepareContext(ctx, tracesInsertSQL)
-		if err != nil {
-			return fmt.Errorf("PrepareContext:%w", err)
-		}
-		defer statement.Close()
-		rss := td.ResourceSpans()
-		for i := 0; i < rss.Len(); i++ {
-			rs := rss.At(i)
-			serviceName := serviceNameForResource(rs.Resource())
-			ilss := rs.ScopeSpans()
-			for j := 0; j < ilss.Len(); j++ {
-				ils := ilss.At(j)
-				spans := ils.Spans()
-				for k := 0; k < spans.Len(); k++ {
-					span := spans.At(k)
-					rs.Resource().Attributes().CopyTo(span.Attributes())
-					path := fmt.Sprintf("resourceSpans.%d.scopeSpans.%d.spans.%d", i, j, k)
-					rawSpan := gjson.GetBytes(rawTraces, path).String()
+	schema := new(TracesSchema)
 
-					traceID := span.TraceID()
-					if !traceID.IsEmpty() {
-						rawSpan, err = sjson.Set(rawSpan, "traceId", string(base64Encode(traceID[:])))
-						if err != nil {
-							return err
-						}
-					}
-					spanID := span.SpanID()
-					if !spanID.IsEmpty() {
-						rawSpan, err = sjson.Set(rawSpan, "spanId", string(base64Encode(spanID[:])))
-						if err != nil {
-							return err
-						}
-					}
-					parentSpanID := span.ParentSpanID()
-					if !parentSpanID.IsEmpty() {
-						rawSpan, err = sjson.Set(rawSpan, "parentSpanId", string(base64Encode(parentSpanID[:])))
-						if err != nil {
-							return err
-						}
-					}
+	input := proto.Input{
+		{Name: "trace_id", Data: &schema.TraceID},
+		{Name: "span_id", Data: &schema.SpanID},
+		{Name: "parent_id", Data: &schema.ParentID},
+		{Name: "name", Data: &schema.Name},
+		{Name: "Timestamp_ns", Data: &schema.TimestampNs},
+		{Name: "duration_ns", Data: &schema.DurationNs},
+		{Name: "service_name", Data: &schema.ServiceName},
+		{Name: "payload_type", Data: &schema.PayloadType},
+		{Name: "payload", Data: &schema.Payload},
+		{Name: "tag", Data: &schema.Tags},
+	}
 
-					tracesInput := convertTracesInput(span, serviceName, rs.Resource(), rawSpan)
-					_, err := statement.ExecContext(ctx,
-						tracesInput.TraceID,
-						tracesInput.SpanID,
-						tracesInput.ParentID,
-						tracesInput.Name,
-						tracesInput.TimestampNs,
-						tracesInput.DurationNs,
-						tracesInput.ServiceName,
-						tracesInput.PayloadType,
-						tracesInput.Payload,
-						tracesInput.Tags,
-					)
-					if err != nil {
-						e.logger.Sugar().Error("Error in writing traces_input to clickhouse: ", err)
+	e.client.Do(ctx, ch.Query{
+		Body:  input.Into("traces_input"),
+		Input: input,
+		OnInput: func(_ context.Context) error {
+			input.Reset()
+			rss := td.ResourceSpans()
+			for i := 0; i < rss.Len(); i++ {
+				rs := rss.At(i)
+				serviceName := serviceNameForResource(rs.Resource())
+				ilss := rs.ScopeSpans()
+				for j := 0; j < ilss.Len(); j++ {
+					ils := ilss.At(j)
+					spans := ils.Spans()
+					for k := 0; k < spans.Len(); k++ {
+						span := spans.At(k)
+						rs.Resource().Attributes().CopyTo(span.Attributes())
+						path := fmt.Sprintf("resourceSpans.%d.scopeSpans.%d.spans.%d", i, j, k)
+						rawSpan := gjson.GetBytes(rawTraces, path).String()
+
+						traceID := span.TraceID()
+						if !traceID.IsEmpty() {
+							rawSpan, err = sjson.Set(rawSpan, "traceId", string(base64Encode(traceID[:])))
+							if err != nil {
+								return err
+							}
+						}
+						spanID := span.SpanID()
+						if !spanID.IsEmpty() {
+							rawSpan, err = sjson.Set(rawSpan, "spanId", string(base64Encode(spanID[:])))
+							if err != nil {
+								return err
+							}
+						}
+						parentSpanID := span.ParentSpanID()
+						if !parentSpanID.IsEmpty() {
+							rawSpan, err = sjson.Set(rawSpan, "parentSpanId", string(base64Encode(parentSpanID[:])))
+							if err != nil {
+								return err
+							}
+						}
+
+						tracesInput := convertTracesInput(span, serviceName, rawSpan)
+						schema.TraceID.Append(tracesInput.TraceID)
+						schema.SpanID.Append(tracesInput.SpanID)
+						schema.ParentID.Append(tracesInput.ParentID)
+						schema.Name.Append(tracesInput.Name)
+						schema.TimestampNs.Append(tracesInput.TimestampNs)
+						schema.ServiceName.Append(tracesInput.ServiceName)
+						schema.PayloadType.Append(tracesInput.PayloadType)
+						schema.Payload.Append(tracesInput.Payload)
+
+						tags := make([]proto.ColTuple, len(tracesInput.Tags))
+						for i, tag := range tracesInput.Tags {
+							first := new(proto.ColStr)
+							second := new(proto.ColStr)
+							t := proto.ColTuple{first, second}
+							first.Append(tag[0])
+							second.Append(tag[1])
+							tags[i] = t
+						}
+						schema.Tags.Append(tags)
 					}
 				}
 			}
-		}
-		return nil
-	})
+			return nil
+		},
+	},
+	)
+	return nil
 }
 
 // Shutdown will shutdown the exporter.
 func (e *tracesExporter) Shutdown(_ context.Context) error {
-	if e.db != nil {
-		return e.db.Close()
+	if e.client != nil {
+		return e.client.Close()
 	}
 	return nil
 }
@@ -167,22 +197,16 @@ func extractServiceName(tags map[string]string) string {
 	return serviceName
 }
 
-func convertTracesInput(otelSpan ptrace.Span, serviceName string, resource pcommon.Resource, payload string) *Trace {
+func convertTracesInput(otelSpan ptrace.Span, serviceName string, payload string) *Trace {
 	durationNano := uint64(otelSpan.EndTimestamp() - otelSpan.StartTimestamp())
 	attributes := otelSpan.Attributes()
-	resourceAttributes := resource.Attributes()
 
-	tags := make([][]any, 0)
-	tags = append(tags, []any{"name", otelSpan.Name()})
-	tags = append(tags, []any{"service.name", serviceName})
+	tags := make([][]string, 0)
+	tags = append(tags, []string{"name", otelSpan.Name()})
+	tags = append(tags, []string{"service.name", serviceName})
 
 	attributes.Range(func(k string, v pcommon.Value) bool {
-		tags = append(tags, []any{k, v.AsString()})
-		return true
-	})
-
-	resourceAttributes.Range(func(k string, v pcommon.Value) bool {
-		tags = append(tags, []any{k, v.AsString()})
+		tags = append(tags, []string{k, v.AsString()})
 		return true
 	})
 
