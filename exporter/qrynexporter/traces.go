@@ -106,7 +106,6 @@ func newTracesInput(schema *TracesSchema) proto.Input {
 		{Name: "payload", Data: &schema.Payload},
 		{Name: "tag", Data: &schema.Tags},
 	}
-
 }
 
 func appendTracesInput(schema *TracesSchema, tracesInput *Trace) {
@@ -132,7 +131,7 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 	schema := new(TracesSchema)
 	input := newTracesInput(schema)
 
-	e.client.Do(ctx, ch.Query{
+	return e.client.Do(ctx, ch.Query{
 		Body:  input.Into("traces_input"),
 		Input: input,
 		OnInput: func(_ context.Context) error {
@@ -159,9 +158,7 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 			}
 			return nil
 		},
-	},
-	)
-	return nil
+	})
 }
 
 // Shutdown will shutdown the exporter.

@@ -2,7 +2,6 @@ package qrynexporter
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/ClickHouse/ch-go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/value"
 	conventions "go.opentelemetry.io/collector/model/semconv/v1.5.0"
@@ -26,28 +26,30 @@ const (
 )
 
 type metricsExporter struct {
-	db *sql.DB
+	client *ch.Client
 
 	logger *zap.Logger
-	cfg    *Config
 }
 
-func newMetricsExporter(logger *zap.Logger, cfg *Config) (*metricsExporter, error) {
-	db, err := sql.Open("clickhouse", cfg.DSN)
+func newMetricsExporter(ctx context.Context, logger *zap.Logger, cfg *Config) (*metricsExporter, error) {
+	opts, err := parseDSN(cfg.DSN)
+	if err != nil {
+		return nil, err
+	}
+	client, err := ch.Dial(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	return &metricsExporter{
-		db:     db,
+		client: client,
 		logger: logger,
-		cfg:    cfg,
 	}, nil
 }
 
 // Shutdown will shutdown the exporter.
 func (e *metricsExporter) Shutdown(_ context.Context) error {
-	if e.db != nil {
-		return e.db.Close()
+	if e.client != nil {
+		return e.client.Close()
 	}
 	return nil
 }
@@ -81,7 +83,7 @@ func normalizeLabel(label string) string {
 	return label
 }
 
-func buildLabels(resource pcommon.Resource, attributes pcommon.Map, extras ...string) model.LabelSet {
+func buildLabelSet(resource pcommon.Resource, attributes pcommon.Map, extras ...string) model.LabelSet {
 	out := defaultExporterLabels
 	attributes.Range(func(key string, value pcommon.Value) bool {
 		out[model.LabelName(normalizeLabel(key))] = model.LabelValue(value.AsString())
@@ -113,24 +115,18 @@ func buildLabels(resource pcommon.Resource, attributes pcommon.Map, extras ...st
 	}
 	return out
 }
-func exportNumberDataPoint(ctx context.Context, pt pmetric.NumberDataPoint,
+
+func exportNumberDataPoint(pt pmetric.NumberDataPoint,
 	resource pcommon.Resource, metric pmetric.Metric,
-	sampleStatement, timeSerieStatement *sql.Stmt,
+	samples *[]Sample, timeSeries *[]TimeSerie,
 ) error {
 	metricName := removePromForbiddenRunes(metric.Name())
-	labelSet := buildLabels(resource, resource.Attributes(), model.MetricNameLabel, metricName)
+	labelSet := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, metricName)
 	fingerprint := labelSet.Fingerprint()
 	sample := Sample{
 		TimestampNs: pt.Timestamp().AsTime().UnixNano(),
 		Fingerprint: uint64(fingerprint),
 		String:      string(labelSet[model.LabelName(model.MetricNameLabel)]),
-	}
-	if _, err := sampleStatement.ExecContext(ctx, sample.Fingerprint,
-		sample.TimestampNs,
-		sample.Value,
-		sample.String,
-	); err != nil {
-		return err
 	}
 	switch pt.ValueType() {
 	case pmetric.NumberDataPointValueTypeInt:
@@ -142,37 +138,29 @@ func exportNumberDataPoint(ctx context.Context, pt pmetric.NumberDataPoint,
 		sample.Value = math.Float64frombits(value.StaleNaN)
 	}
 
+	*samples = append(*samples, sample)
+
 	labelsJSON, err := json.Marshal(labelSet)
 	if err != nil {
 		return fmt.Errorf("marshal label set error: %w", err)
 	}
 	timeSerie := &TimeSerie{
 		Fingerprint: uint64(fingerprint),
-		Date:        pt.Timestamp().AsTime().Format("2006-01-02"),
+		Date:        pt.Timestamp().AsTime(),
 		Labels:      string(labelsJSON),
 		Name:        string(labelSet[model.LabelName(model.MetricNameLabel)]),
 	}
-	if _, err := timeSerieStatement.ExecContext(ctx,
-		timeSerie.Date,
-		timeSerie.Fingerprint,
-		timeSerie.Labels,
-		timeSerie.Name,
-	); err != nil {
-		return err
-	}
+	*timeSeries = append(*timeSeries, *timeSerie)
 	return nil
 }
 
-func exportNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
+func exportNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,
 	resource pcommon.Resource, metric pmetric.Metric,
-	sampleStatement, timeSerieStatement *sql.Stmt,
+	samples *[]Sample, timeSeries *[]TimeSerie,
 ) error {
-	if dataPoints.Len() == 0 {
-		return fmt.Errorf("empty data points. %s is dropped", metric.Name())
-	}
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
-		err := exportNumberDataPoint(ctx, pt, resource, metric, sampleStatement, timeSerieStatement)
+		err := exportNumberDataPoint(pt, resource, metric, samples, timeSeries)
 		if err != nil {
 			return err
 		}
@@ -180,15 +168,15 @@ func exportNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPo
 	return nil
 }
 
-func exportSummaryDataPoint(ctx context.Context, pt pmetric.SummaryDataPoint,
+func exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 	resource pcommon.Resource, metric pmetric.Metric,
-	sampleStatement, timeSerieStatement *sql.Stmt,
+	samples *[]Sample, timeSeries *[]TimeSerie,
 ) error {
 	baseName := normalizeLabel(metric.Name())
 	timestampNs := pt.Timestamp().AsTime().UnixNano()
 
 	// treat sum as a sample in an individual TimeSeries
-	sumLabels := buildLabels(resource, resource.Attributes(), model.MetricNameLabel, baseName+sumSuffix)
+	sumLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+sumSuffix)
 	labelsJSON, err := json.Marshal(sumLabels)
 	if err != nil {
 		return fmt.Errorf("marshal label set err: %w", err)
@@ -196,13 +184,11 @@ func exportSummaryDataPoint(ctx context.Context, pt pmetric.SummaryDataPoint,
 	fingerprint := sumLabels.Fingerprint()
 	timeSerie := TimeSerie{
 		Fingerprint: uint64(fingerprint),
-		Date:        pt.Timestamp().AsTime().Format("2006-01-02"),
+		Date:        pt.Timestamp().AsTime(),
 		Labels:      string(labelsJSON),
 		Name:        string(sumLabels[model.LabelName(model.MetricNameLabel)]),
 	}
-	if _, err := timeSerieStatement.ExecContext(ctx, timeSerie.Date, timeSerie.Fingerprint, timeSerie.Labels, timeSerie.Name); err != nil {
-		return err
-	}
+	*timeSeries = append(*timeSeries, timeSerie)
 	sum := Sample{
 		Fingerprint: uint64(fingerprint),
 		Value:       pt.Sum(),
@@ -212,12 +198,10 @@ func exportSummaryDataPoint(ctx context.Context, pt pmetric.SummaryDataPoint,
 	if pt.Flags().NoRecordedValue() {
 		sum.Value = math.Float64frombits(value.StaleNaN)
 	}
-	if _, err := sampleStatement.ExecContext(ctx, sum.Fingerprint, sum.TimestampNs, sum.Value, sum.String); err != nil {
-		return err
-	}
+	*samples = append(*samples, sum)
 
 	// treat count as a sample in an individual TimeSeries
-	countLabels := buildLabels(resource, resource.Attributes(), model.MetricNameLabel, baseName+countSuffix)
+	countLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+countSuffix)
 	labelsJSON, err = json.Marshal(countLabels)
 	if err != nil {
 		return fmt.Errorf("marshal label set error: %w", err)
@@ -225,13 +209,11 @@ func exportSummaryDataPoint(ctx context.Context, pt pmetric.SummaryDataPoint,
 	fingerprint = countLabels.Fingerprint()
 	timeSerie = TimeSerie{
 		Fingerprint: uint64(fingerprint),
-		Date:        pt.Timestamp().AsTime().Format("2006-01-02"),
+		Date:        pt.Timestamp().AsTime(),
 		Labels:      string(labelsJSON),
 		Name:        string(countLabels[model.LabelName(model.MetricNameLabel)]),
 	}
-	if _, err := timeSerieStatement.ExecContext(ctx, timeSerie.Date, timeSerie.Fingerprint, timeSerie.Labels, timeSerie.Name); err != nil {
-		return err
-	}
+	*timeSeries = append(*timeSeries, timeSerie)
 	count := Sample{
 		Fingerprint: uint64(fingerprint),
 		Value:       pt.Sum(),
@@ -241,15 +223,13 @@ func exportSummaryDataPoint(ctx context.Context, pt pmetric.SummaryDataPoint,
 	if pt.Flags().NoRecordedValue() {
 		count.Value = math.Float64frombits(value.StaleNaN)
 	}
-	if _, err := sampleStatement.ExecContext(ctx, count.Fingerprint, count.TimestampNs, count.Value, count.String); err != nil {
-		return err
-	}
+	*samples = append(*samples, count)
 
 	// process each percentile/quantile
 	for i := 0; i < pt.QuantileValues().Len(); i++ {
 		qt := pt.QuantileValues().At(i)
 		percentileStr := strconv.FormatFloat(qt.Quantile(), 'f', -1, 64)
-		qtlabels := buildLabels(resource, pt.Attributes(), model.MetricNameLabel, baseName, quantileStr, percentileStr)
+		qtlabels := buildLabelSet(resource, pt.Attributes(), model.MetricNameLabel, baseName, quantileStr, percentileStr)
 		fingerprint = qtlabels.Fingerprint()
 		labelsJSON, err = json.Marshal(countLabels)
 		if err != nil {
@@ -257,13 +237,11 @@ func exportSummaryDataPoint(ctx context.Context, pt pmetric.SummaryDataPoint,
 		}
 		timeSerie = TimeSerie{
 			Fingerprint: uint64(fingerprint),
-			Date:        pt.Timestamp().AsTime().Format("2006-01-02"),
+			Date:        pt.Timestamp().AsTime(),
 			Labels:      string(labelsJSON),
 			Name:        string(qtlabels[model.LabelName(model.MetricNameLabel)]),
 		}
-		if _, err := timeSerieStatement.ExecContext(ctx, timeSerie.Date, timeSerie.Fingerprint, timeSerie.Labels, timeSerie.Name); err != nil {
-			return err
-		}
+		*timeSeries = append(*timeSeries, timeSerie)
 		quantile := Sample{
 			Fingerprint: uint64(fingerprint),
 			Value:       qt.Value(),
@@ -273,22 +251,20 @@ func exportSummaryDataPoint(ctx context.Context, pt pmetric.SummaryDataPoint,
 		if pt.Flags().NoRecordedValue() {
 			quantile.Value = math.Float64frombits(value.StaleNaN)
 		}
-		if _, err := sampleStatement.ExecContext(ctx, quantile.Fingerprint, quantile.TimestampNs, quantile.Value, quantile.String); err != nil {
-			return err
-		}
+		*samples = append(*samples, quantile)
 	}
 	return nil
 }
 
-func exportHistogramDataPoint(ctx context.Context, pt pmetric.HistogramDataPoint,
+func exportHistogramDataPoint(pt pmetric.HistogramDataPoint,
 	resource pcommon.Resource, metric pmetric.Metric,
-	sampleStatement, timeSerieStatement *sql.Stmt,
+	samples *[]Sample, timeSeries *[]TimeSerie,
 ) error {
 	baseName := normalizeLabel(metric.Name())
 	timestampNs := pt.Timestamp().AsTime().UnixNano()
 	// add sum count labels
 	if pt.HasSum() {
-		sumLabels := buildLabels(resource, resource.Attributes(), model.MetricNameLabel, baseName+sumSuffix)
+		sumLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+sumSuffix)
 		labelsJSON, err := json.Marshal(sumLabels)
 		if err != nil {
 			return fmt.Errorf("marshal label set error: %w", err)
@@ -296,26 +272,22 @@ func exportHistogramDataPoint(ctx context.Context, pt pmetric.HistogramDataPoint
 		fingerprint := sumLabels.Fingerprint()
 		timeSerie := TimeSerie{
 			Fingerprint: uint64(fingerprint),
-			Date:        pt.Timestamp().AsTime().Format("2006-01-02"),
+			Date:        pt.Timestamp().AsTime(),
 			Labels:      string(labelsJSON),
 			Name:        string(sumLabels[model.LabelName(model.MetricNameLabel)]),
 		}
-		if _, err := timeSerieStatement.ExecContext(ctx, timeSerie.Date, timeSerie.Fingerprint, timeSerie.Labels, timeSerie.Name); err != nil {
-			return err
-		}
+		*timeSeries = append(*timeSeries, timeSerie)
 		sample := Sample{
 			Fingerprint: uint64(fingerprint),
 			Value:       pt.Sum(),
 			TimestampNs: timestampNs,
 			String:      string(sumLabels[model.LabelName(model.MetricNameLabel)]),
 		}
-		if _, err := sampleStatement.ExecContext(ctx, sample.Fingerprint, sample.TimestampNs, sample.Value, sample.String); err != nil {
-			return err
-		}
+		*samples = append(*samples, sample)
 	}
 
 	// add count labels sample
-	countLabels := buildLabels(resource, resource.Attributes(), model.MetricNameLabel, baseName+countSuffix)
+	countLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+countSuffix)
 	fingerprint := countLabels.Fingerprint()
 	count := Sample{
 		Fingerprint: uint64(countLabels.Fingerprint()),
@@ -323,22 +295,18 @@ func exportHistogramDataPoint(ctx context.Context, pt pmetric.HistogramDataPoint
 		TimestampNs: pt.Timestamp().AsTime().UnixNano(),
 		String:      string(countLabels[model.LabelName(model.MetricNameLabel)]),
 	}
-	if _, err := sampleStatement.ExecContext(ctx, count.Fingerprint, count.TimestampNs, count.Value, count.String); err != nil {
-		return err
-	}
+	*samples = append(*samples, count)
 	labelsJSON, err := json.Marshal(countLabels)
 	if err != nil {
 		return fmt.Errorf("marshal label set error: %w", err)
 	}
 	timeSerie := TimeSerie{
 		Fingerprint: uint64(fingerprint),
-		Date:        pt.Timestamp().AsTime().Format("2006-01-02"),
+		Date:        pt.Timestamp().AsTime(),
 		Labels:      string(labelsJSON),
 		Name:        string(countLabels[model.LabelName(model.MetricNameLabel)]),
 	}
-	if _, err := timeSerieStatement.ExecContext(ctx, timeSerie.Date, timeSerie.Fingerprint, timeSerie.Labels, timeSerie.Name); err != nil {
-		return err
-	}
+	*timeSeries = append(*timeSeries, timeSerie)
 	// cumulative count for conversion to cumulative histogram
 	var cumulativeCount uint64
 	// process each bound, based on histograms proto definition, # of buckets = # of explicit bounds + 1
@@ -346,32 +314,28 @@ func exportHistogramDataPoint(ctx context.Context, pt pmetric.HistogramDataPoint
 		bound := pt.ExplicitBounds().At(i)
 		boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 		cumulativeCount += pt.BucketCounts().At(i)
-		bucketLabels := buildLabels(resource, resource.Attributes(), model.MetricNameLabel, baseName+bucketSuffix, "le", boundStr)
+		bucketLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+bucketSuffix, "le", boundStr)
 		fingerprint := bucketLabels.Fingerprint()
-		bucket := &Sample{
+		bucket := Sample{
 			Fingerprint: uint64(fingerprint),
 			Value:       float64(cumulativeCount),
 			TimestampNs: timestampNs,
 			String:      string(bucketLabels[model.LabelName(model.MetricNameLabel)]),
 		}
-		if _, err := sampleStatement.ExecContext(ctx, bucket.Fingerprint, bucket.TimestampNs, bucket.Value, bucket.String); err != nil {
-			return err
-		}
+		*samples = append(*samples, bucket)
 		if pt.Flags().NoRecordedValue() {
 			bucket.Value = math.Float64frombits(value.StaleNaN)
 		}
 		timeSerie := TimeSerie{
 			Fingerprint: uint64(fingerprint),
-			Date:        pt.Timestamp().AsTime().Format("2006-01-02"),
+			Date:        pt.Timestamp().AsTime(),
 			Labels:      string(labelsJSON),
 			Name:        string(countLabels[model.LabelName(model.MetricNameLabel)]),
 		}
-		if _, err := timeSerieStatement.ExecContext(ctx, timeSerie.Date, timeSerie.Fingerprint, timeSerie.Labels, timeSerie.Name); err != nil {
-			return err
-		}
+		*timeSeries = append(*timeSeries, timeSerie)
 	}
 	// add le=+Inf bucket
-	bucketLabels := buildLabels(resource, resource.Attributes(), model.MetricNameLabel, baseName+bucketSuffix, "le", "+Inf")
+	bucketLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+bucketSuffix, "le", "+Inf")
 	fingerprint = bucketLabels.Fingerprint()
 	infBucket := &Sample{
 		Fingerprint: uint64(fingerprint),
@@ -383,90 +347,108 @@ func exportHistogramDataPoint(ctx context.Context, pt pmetric.HistogramDataPoint
 	} else {
 		infBucket.Value = float64(pt.Count())
 	}
-	if _, err := sampleStatement.ExecContext(ctx, infBucket.Fingerprint, infBucket.TimestampNs, infBucket.Value, infBucket.String); err != nil {
-		return err
-	}
+	*samples = append(*samples, *infBucket)
 	labelsJSON, err = json.Marshal(bucketLabels)
 	if err != nil {
 		return fmt.Errorf("marshal label set error: %w", err)
 	}
 	timeSerie = TimeSerie{
 		Fingerprint: uint64(fingerprint),
-		Date:        pt.Timestamp().AsTime().Format("2006-01-02"),
+		Date:        pt.Timestamp().AsTime(),
 		Labels:      string(labelsJSON),
 		Name:        string(bucketLabels[model.LabelName(model.MetricNameLabel)]),
 	}
-	if _, err := timeSerieStatement.ExecContext(ctx, timeSerie.Date, timeSerie.Fingerprint, timeSerie.Labels, timeSerie.Name); err != nil {
-		return err
-	}
+	*timeSeries = append(*timeSeries, timeSerie)
 	return nil
 }
 
 func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metrics) error {
-	return Transaction(ctx, e.db, func(tx *sql.Tx) error {
-		sampleStatement, err := tx.PrepareContext(ctx, samplesInsertSQL)
-		if err != nil {
-			return fmt.Errorf("PrepareContext sampleStatement error: %w", err)
-		}
-		defer sampleStatement.Close()
-		timeSerieStatement, err := tx.PrepareContext(ctx, timeSeriesInsertSQL)
-		if err != nil {
-			return fmt.Errorf("PrepareContext timeSeriesInsertSQL error: %w", err)
-		}
-		defer sampleStatement.Close()
-		for i := 0; i < md.ResourceMetrics().Len(); i++ {
-			resourceMetrics := md.ResourceMetrics().At(i)
+	sampleSchema := new(SampleSchema)
+	samplesInput := newSamplesInput(sampleSchema)
 
-			resource := resourceMetrics.Resource()
+	timeSerieSchema := new(TimeSerieSchema)
+	timeSeriesInput := newTimeSeriesInput(timeSerieSchema)
+	var (
+		samples    []Sample
+		timeSeries []TimeSerie
+		err        error
+	)
 
-			for j := 0; j < resourceMetrics.ScopeMetrics().Len(); j++ {
-				metrics := resourceMetrics.ScopeMetrics().At(j).Metrics()
-				for k := 0; k < metrics.Len(); k++ {
-					metric := metrics.At(k)
-					if !isValidAggregationTemporality(metric) {
-						continue
+	for i := 0; i < md.ResourceMetrics().Len(); i++ {
+		resourceMetrics := md.ResourceMetrics().At(i)
+		resource := resourceMetrics.Resource()
+		for j := 0; j < resourceMetrics.ScopeMetrics().Len(); j++ {
+			metrics := resourceMetrics.ScopeMetrics().At(j).Metrics()
+			for k := 0; k < metrics.Len(); k++ {
+				metric := metrics.At(k)
+				if !isValidAggregationTemporality(metric) {
+					continue
+				}
+				switch metric.Type() {
+				case pmetric.MetricTypeGauge:
+					dataPoints := metric.Gauge().DataPoints()
+					err = exportNumberDataPoints(dataPoints, resource, metric, &samples, &timeSeries)
+					if err != nil {
+						return fmt.Errorf("export NumberDataPointSlice error: %w", err)
 					}
-					switch metric.Type() {
-					case pmetric.MetricTypeGauge:
-						dataPoints := metric.Gauge().DataPoints()
-						err = exportNumberDataPoints(ctx, dataPoints, resource, metric, sampleStatement, timeSerieStatement)
+				case pmetric.MetricTypeSum:
+					dataPoints := metric.Sum().DataPoints()
+					err = exportNumberDataPoints(dataPoints, resource, metric, &samples, &timeSeries)
+					if err != nil {
+						return fmt.Errorf("export NumberDataPointSlice error: %w", err)
+					}
+				case pmetric.MetricTypeHistogram:
+					dataPoints := metric.Histogram().DataPoints()
+					for x := 0; x < dataPoints.Len(); x++ {
+						err = exportHistogramDataPoint(dataPoints.At(x), resource, metric, &samples, &timeSeries)
 						if err != nil {
 							return fmt.Errorf("export NumberDataPointSlice error: %w", err)
 						}
-					case pmetric.MetricTypeSum:
-						dataPoints := metric.Sum().DataPoints()
-						err = exportNumberDataPoints(ctx, dataPoints, resource, metric, sampleStatement, timeSerieStatement)
+					}
+				case pmetric.MetricTypeSummary:
+					dataPoints := metric.Summary().DataPoints()
+					if dataPoints.Len() == 0 {
+						return fmt.Errorf("empty data points. %s is dropped", metric.Name())
+					}
+					for x := 0; x < dataPoints.Len(); x++ {
+						err = exportSummaryDataPoint(dataPoints.At(x), resource, metric, &samples, &timeSeries)
 						if err != nil {
-							return fmt.Errorf("export NumberDataPointSlice error: %w", err)
-						}
-					case pmetric.MetricTypeHistogram:
-						dataPoints := metric.Histogram().DataPoints()
-						if dataPoints.Len() == 0 {
-							return fmt.Errorf("empty data points. %s is dropped", metric.Name())
-						}
-						for x := 0; x < dataPoints.Len(); x++ {
-							err = exportHistogramDataPoint(ctx, dataPoints.At(x), resource, metric, sampleStatement, timeSerieStatement)
-							if err != nil {
-								return fmt.Errorf("export NumberDataPointSlice error: %w", err)
-							}
-						}
-					case pmetric.MetricTypeSummary:
-						dataPoints := metric.Summary().DataPoints()
-						if dataPoints.Len() == 0 {
-							return fmt.Errorf("empty data points. %s is dropped", metric.Name())
-						}
-						for x := 0; x < dataPoints.Len(); x++ {
-							err = exportSummaryDataPoint(ctx, dataPoints.At(x), resource, metric, sampleStatement, timeSerieStatement)
-							if err != nil {
-								return fmt.Errorf("export SummaryDataPoint error: %w", err)
-							}
+							return fmt.Errorf("export SummaryDataPoint error: %w", err)
 						}
 					}
 				}
 			}
 		}
-		return nil
-	})
+	}
+	if err := e.client.Do(ctx, ch.Query{
+		Body:  samplesInput.Into("samples_v3"),
+		Input: samplesInput,
+		OnInput: func(_ context.Context) error {
+			samplesInput.Reset()
+			for _, sample := range samples {
+				appendSample(sampleSchema, sample)
+			}
+			return nil
+		},
+	}); err != nil {
+		return err
+	}
+
+	if err := e.client.Do(ctx, ch.Query{
+		Body:  timeSeriesInput.Into("time_series"),
+		Input: timeSeriesInput,
+		OnInput: func(_ context.Context) error {
+			timeSeriesInput.Reset()
+			for _, timeSerie := range timeSeries {
+				appendTimeSerie(timeSerieSchema, timeSerie)
+			}
+			return nil
+		},
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // isValidAggregationTemporality checks whether an OTel metric has a valid

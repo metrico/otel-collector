@@ -18,34 +18,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/ClickHouse/ch-go/proto"
-)
+	"time"
 
-const (
-	samplesInsertSQL = `
-  INSERT INTO samples_v3 (
-    fingerprint, 
-    timestamp_ns, 
-    value, 
-    string
-  ) VALUES (
-    ?,
-    ?,
-    ?,
-    ?
-  )`
-	timeSeriesInsertSQL = `
-  INSERT INTO time_series (
-    date,
-    fingerprint, 
-    labels,
-    name
-  ) VALUES (
-    ?,
-    ?,
-    ?,
-    ?
-  )`
+	"github.com/ClickHouse/ch-go/proto"
 )
 
 // Trace represent trace model
@@ -81,6 +56,7 @@ type Trace struct {
 //
 // ) Engine=Null
 
+// TracesSchema
 type TracesSchema struct {
 	TraceID     proto.ColStr
 	SpanID      proto.ColStr
@@ -102,12 +78,51 @@ type Sample struct {
 	String      string
 }
 
+// SampleSchema samples_v3 schema
+//
+// `CREATE TABLE IF NOT EXISTS samples_v3
+// (
+//
+//	fingerprint UInt64,
+//	timestamp_ns Int64 CODEC(DoubleDelta),
+//	value Float64 CODEC(Gorilla),
+//	string String
+//
+// ) ENGINE = MergeTree
+// PARTITION BY toStartOfDay(toDateTime(timestamp_ns / 1000000000))
+// ORDER BY ({{SAMPLES_ORDER_RUL}})`
+type SampleSchema struct {
+	Fingerprint proto.ColUInt64
+	TimestampNs proto.ColInt64
+	Value       proto.ColFloat64
+	String      proto.ColStr
+}
+
 // TimeSerie represent TimeSerie
 type TimeSerie struct {
-	Date        string
+	Date        time.Time
 	Fingerprint uint64
 	Labels      string
 	Name        string
+}
+
+// TimeSerieSchema time_series schema
+// `CREATE TABLE IF NOT EXISTS time_series
+// (
+//
+//	date Date,
+//	fingerprint UInt64,
+//	labels String,
+//	name String
+//
+// ) ENGINE = ReplacingMergeTree(date)
+// PARTITION BY date
+// ORDER BY fingerprint
+type TimeSerieSchema struct {
+	Date        proto.ColDate
+	Fingerprint proto.ColUInt64
+	Labels      proto.ColStr
+	Name        proto.ColStr
 }
 
 // Transaction wrap func under Transaction

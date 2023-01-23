@@ -79,7 +79,7 @@ func createLogsExporter(
 	cfg component.ExporterConfig,
 ) (component.LogsExporter, error) {
 	c := cfg.(*Config)
-	exporter, err := newLogsExporter(set.Logger, c)
+	exporter, err := newLogsExporter(ctx, set.Logger, c)
 	if err != nil {
 		return nil, fmt.Errorf("cannot configure qryn logs exporter: %w", err)
 	}
@@ -104,7 +104,7 @@ func createMetricsExporter(
 	cfg component.ExporterConfig,
 ) (component.MetricsExporter, error) {
 	c := cfg.(*Config)
-	exporter, err := newMetricsExporter(set.Logger, c)
+	exporter, err := newMetricsExporter(ctx, set.Logger, c)
 	if err != nil {
 		return nil, fmt.Errorf("cannot configure qryn logs exporter: %w", err)
 	}
