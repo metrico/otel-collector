@@ -113,7 +113,7 @@ func buildLabels(resource pcommon.Resource, attributes pcommon.Map, extras ...st
 	}
 	return out
 }
-func convertNumberDataPoint(ctx context.Context, pt pmetric.NumberDataPoint,
+func exportNumberDataPoint(ctx context.Context, pt pmetric.NumberDataPoint,
 	resource pcommon.Resource, metric pmetric.Metric,
 	sampleStatement, timeSerieStatement *sql.Stmt,
 ) error {
@@ -172,7 +172,7 @@ func exportNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPo
 	}
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
-		err := convertNumberDataPoint(ctx, pt, resource, metric, sampleStatement, timeSerieStatement)
+		err := exportNumberDataPoint(ctx, pt, resource, metric, sampleStatement, timeSerieStatement)
 		if err != nil {
 			return err
 		}
