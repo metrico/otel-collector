@@ -54,20 +54,47 @@ func newTracesExporter(ctx context.Context, logger *zap.Logger, cfg *Config) (*t
 	}, nil
 }
 
-func newTraceSchema() *TracesSchema {
-	return nil
+func fixRawSpan(rawSpan string, span ptrace.Span) (string, error) {
+	var err error
+	traceID := span.TraceID()
+	if !traceID.IsEmpty() {
+		rawSpan, err = sjson.Set(rawSpan, "traceId", string(base64Encode(traceID[:])))
+		if err != nil {
+			return "", err
+		}
+	}
+	spanID := span.SpanID()
+	if !spanID.IsEmpty() {
+		rawSpan, err = sjson.Set(rawSpan, "spanId", string(base64Encode(spanID[:])))
+		if err != nil {
+			return "", err
+		}
+	}
+	parentSpanID := span.ParentSpanID()
+	if !parentSpanID.IsEmpty() {
+		rawSpan, err = sjson.Set(rawSpan, "parentSpanId", string(base64Encode(parentSpanID[:])))
+		if err != nil {
+			return "", err
+		}
+	}
+	return rawSpan, nil
 }
 
-// traceDataPusher implements OTEL exporterhelper.traceDataPusher
-func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) error {
-	mergeAttributes(&td)
-	rawTraces, err := marshaler.MarshalTraces(td)
-	if err != nil {
-		return err
+func convertTagsToColTupleArray(tags [][]string) []proto.ColTuple {
+	tupleArr := make([]proto.ColTuple, len(tags))
+	for i, tag := range tags {
+		first := new(proto.ColStr)
+		second := new(proto.ColStr)
+		t := proto.ColTuple{first, second}
+		first.Append(tag[0])
+		second.Append(tag[1])
+		tupleArr[i] = t
 	}
-	schema := new(TracesSchema)
+	return tupleArr
+}
 
-	input := proto.Input{
+func newTracesInput(schema *TracesSchema) proto.Input {
+	return proto.Input{
 		{Name: "trace_id", Data: &schema.TraceID},
 		{Name: "span_id", Data: &schema.SpanID},
 		{Name: "parent_id", Data: &schema.ParentID},
@@ -79,6 +106,31 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 		{Name: "payload", Data: &schema.Payload},
 		{Name: "tag", Data: &schema.Tags},
 	}
+
+}
+
+func appendTracesInput(schema *TracesSchema, tracesInput *Trace) {
+	schema.TraceID.Append(tracesInput.TraceID)
+	schema.SpanID.Append(tracesInput.SpanID)
+	schema.ParentID.Append(tracesInput.ParentID)
+	schema.Name.Append(tracesInput.Name)
+	schema.TimestampNs.Append(tracesInput.TimestampNs)
+	schema.ServiceName.Append(tracesInput.ServiceName)
+	schema.PayloadType.Append(tracesInput.PayloadType)
+	schema.Payload.Append(tracesInput.Payload)
+	schema.Tags.Append(convertTagsToColTupleArray(tracesInput.Tags))
+}
+
+// traceDataPusher implements OTEL exporterhelper.traceDataPusher
+func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) error {
+	mergeAttributes(&td)
+	rawTraces, err := marshaler.MarshalTraces(td)
+	if err != nil {
+		return err
+	}
+
+	schema := new(TracesSchema)
+	input := newTracesInput(schema)
 
 	e.client.Do(ctx, ch.Query{
 		Body:  input.Into("traces_input"),
@@ -96,51 +148,12 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 					for k := 0; k < spans.Len(); k++ {
 						span := spans.At(k)
 						rs.Resource().Attributes().CopyTo(span.Attributes())
-						path := fmt.Sprintf("resourceSpans.%d.scopeSpans.%d.spans.%d", i, j, k)
-						rawSpan := gjson.GetBytes(rawTraces, path).String()
-
-						traceID := span.TraceID()
-						if !traceID.IsEmpty() {
-							rawSpan, err = sjson.Set(rawSpan, "traceId", string(base64Encode(traceID[:])))
-							if err != nil {
-								return err
-							}
+						rawSpan, err := fixRawSpan(gjson.GetBytes(rawTraces, fmt.Sprintf("resourceSpans.%d.scopeSpans.%d.spans.%d", i, j, k)).String(), span)
+						if err != nil {
+							return err
 						}
-						spanID := span.SpanID()
-						if !spanID.IsEmpty() {
-							rawSpan, err = sjson.Set(rawSpan, "spanId", string(base64Encode(spanID[:])))
-							if err != nil {
-								return err
-							}
-						}
-						parentSpanID := span.ParentSpanID()
-						if !parentSpanID.IsEmpty() {
-							rawSpan, err = sjson.Set(rawSpan, "parentSpanId", string(base64Encode(parentSpanID[:])))
-							if err != nil {
-								return err
-							}
-						}
-
 						tracesInput := convertTracesInput(span, serviceName, rawSpan)
-						schema.TraceID.Append(tracesInput.TraceID)
-						schema.SpanID.Append(tracesInput.SpanID)
-						schema.ParentID.Append(tracesInput.ParentID)
-						schema.Name.Append(tracesInput.Name)
-						schema.TimestampNs.Append(tracesInput.TimestampNs)
-						schema.ServiceName.Append(tracesInput.ServiceName)
-						schema.PayloadType.Append(tracesInput.PayloadType)
-						schema.Payload.Append(tracesInput.Payload)
-
-						tags := make([]proto.ColTuple, len(tracesInput.Tags))
-						for i, tag := range tracesInput.Tags {
-							first := new(proto.ColStr)
-							second := new(proto.ColStr)
-							t := proto.ColTuple{first, second}
-							first.Append(tag[0])
-							second.Append(tag[1])
-							tags[i] = t
-						}
-						schema.Tags.Append(tags)
+						appendTracesInput(schema, tracesInput)
 					}
 				}
 			}
@@ -210,7 +223,7 @@ func convertTracesInput(otelSpan ptrace.Span, serviceName string, payload string
 		return true
 	})
 
-	span := &Trace{
+	trace := &Trace{
 		TraceID:     otelSpan.TraceID().HexString(),
 		SpanID:      otelSpan.SpanID().HexString(),
 		ParentID:    otelSpan.ParentSpanID().HexString(),
@@ -223,7 +236,7 @@ func convertTracesInput(otelSpan ptrace.Span, serviceName string, payload string
 		Payload:     payload,
 	}
 
-	return span
+	return trace
 }
 
 func mergeAttributes(td *ptrace.Traces) {

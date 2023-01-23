@@ -4,7 +4,6 @@ go 1.18
 
 require (
 	github.com/ClickHouse/ch-go v0.51.1
-	github.com/ClickHouse/clickhouse-go/v2 v2.0.12
 	github.com/go-logfmt/logfmt v0.5.1
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/carbonexporter v0.66.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.66.0
@@ -261,7 +260,6 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/openzipkin/zipkin-go v0.4.1 // indirect
 	github.com/pascaldekloe/name v1.0.1 // indirect
-	github.com/paulmach/orb v0.4.0 // indirect
 	github.com/philhofer/fwd v1.1.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.17 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -277,7 +275,6 @@ require (
 	github.com/scaleway/scaleway-sdk-go v1.0.0-beta.9 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.22.10 // indirect
-	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
