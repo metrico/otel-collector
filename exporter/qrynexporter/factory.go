@@ -95,3 +95,30 @@ func createLogsExporter(
 		exporterhelper.WithRetry(c.RetrySettings),
 	)
 }
+
+
+// createMetricsExporter creates a new exporter for metrics.
+// Metrics are directly insert into clickhouse.
+func createMetricsExporter(
+	ctx context.Context,
+	set component.ExporterCreateSettings,
+	cfg component.ExporterConfig,
+) (component.MetricsExporter, error) {
+	c := cfg.(*Config)
+	exporter, err := newMetricsExporter(set.Logger, c)
+	if err != nil {
+		return nil, fmt.Errorf("cannot configure qryn logs exporter: %w", err)
+	}
+
+	return exporterhelper.NewMetricsExporter(
+		ctx,
+		set,
+		cfg,
+		exporter.pushMetricsData,
+		exporterhelper.WithShutdown(exporter.Shutdown),
+		exporterhelper.WithTimeout(c.TimeoutSettings),
+		exporterhelper.WithQueue(c.enforcedQueueSettings()),
+		exporterhelper.WithRetry(c.RetrySettings),
+	)
+}
+

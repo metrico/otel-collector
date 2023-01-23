@@ -29,33 +29,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	tracesInsertSQL = `
-  INSERT INTO traces_input (
-    trace_id,
-    span_id, 
-    parent_id, 
-    name,
-    timestamp_ns, 
-    duration_ns, 
-    service_name, 
-    payload_type, 
-    payload, 
-    tags
-  ) VALUES (
-    ?,
-    ?,
-    ?,
-    ?,
-    ?,
-    ?,
-    ?,
-    ?,
-    ?,
-    ?
-  )`
-)
-
 var marshaler = &ptrace.JSONMarshaler{}
 
 // tracesExporter for writing spans to ClickHouse
@@ -127,7 +100,6 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 
 					tracesInput := convertTracesInput(span, serviceName, rs.Resource(), rawSpan)
 					_, err := statement.ExecContext(ctx,
-						"0",
 						tracesInput.TraceID,
 						tracesInput.SpanID,
 						tracesInput.ParentID,
@@ -140,7 +112,7 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 						tracesInput.Tags,
 					)
 					if err != nil {
-						zap.S().Error("Error in writing traces_input to clickhouse: ", err)
+						e.logger.Sugar().Error("Error in writing traces_input to clickhouse: ", err)
 					}
 				}
 			}
@@ -196,13 +168,10 @@ func extractServiceName(tags map[string]string) string {
 }
 
 func convertTracesInput(otelSpan ptrace.Span, serviceName string, resource pcommon.Resource, payload string) *Trace {
-
 	durationNano := uint64(otelSpan.EndTimestamp() - otelSpan.StartTimestamp())
-
 	attributes := otelSpan.Attributes()
 	resourceAttributes := resource.Attributes()
 
-	// build tags
 	tags := make([][]any, 0)
 	tags = append(tags, []any{"name", otelSpan.Name()})
 	tags = append(tags, []any{"service.name", serviceName})

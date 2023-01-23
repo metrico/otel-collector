@@ -16,33 +16,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	samplesInsertSQL = `
-  INSERT INTO samples_v3 (
-    fingerprint, 
-    timestamp_ns, 
-    value, 
-    string
-  ) VALUES (
-    ?,
-    ?,
-    ?,
-    ?
-  )`
-	timeSeriesInsertSQL = `
-  INSERT INTO time_series (
-    date,
-    fingerprint, 
-    labels,
-    name
-  ) VALUES (
-    ?,
-    ?,
-    ?,
-    ?
-  )`
-)
-
 type logsExporter struct {
 	db *sql.DB
 
@@ -364,16 +337,15 @@ func convertLogToSample(fingerprint model.Fingerprint, log plog.LogRecord, res p
 }
 
 func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
-	start := time.Now()
-	err := Transaction(ctx, e.db, func(tx *sql.Tx) error {
+	return Transaction(ctx, e.db, func(tx *sql.Tx) error {
 		sampleStatement, err := tx.PrepareContext(ctx, samplesInsertSQL)
 		if err != nil {
-			return fmt.Errorf("PrepareContext:%w", err)
+			return fmt.Errorf("PrepareContext samplesInsertSQL error: %w", err)
 		}
 		defer sampleStatement.Close()
 		timeSerieStatement, err := tx.PrepareContext(ctx, timeSeriesInsertSQL)
 		if err != nil {
-			return fmt.Errorf("PrepareContext:%w", err)
+			return fmt.Errorf("PrepareContext timeSeriesInsertSQL error: %w", err)
 		}
 		defer sampleStatement.Close()
 		for i := 0; i < ld.ResourceLogs().Len(); i++ {
@@ -387,7 +359,7 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 					rs.At(k).CopyTo(log)
 					format := getFormatFromFormatHint(log.Attributes(), resource.Attributes())
 					mergedLabels := convertAttributesAndMerge(log.Attributes(), resource.Attributes())
-					// remove the attributes that were promoted to labels
+
 					removeAttributes(log.Attributes(), mergedLabels)
 					removeAttributes(resource.Attributes(), mergedLabels)
 
@@ -403,33 +375,32 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 						sample.String,
 					)
 					if err != nil {
-						return fmt.Errorf("ExecContext:%w", err)
+						return fmt.Errorf("ExecContext sampleStatement error: %w", err)
 					}
-
-					date := time.Unix(0, int64(timestampFromLogRecord(log))).Format("2006-01-02")
-
 					labelsJSON, err := json.Marshal(mergedLabels)
 					if err != nil {
 						return fmt.Errorf("marshal mergedLabels err: %w", err)
 					}
+					timeSerie := TimeSerie{
+						Date:        time.Unix(0, int64(timestampFromLogRecord(log))).Format("2006-01-02"),
+						Fingerprint: uint64(fingerprint),
+						Labels:      string(labelsJSON),
+						Name:        string(mergedLabels[model.MetricNameLabel]),
+					}
 					_, err = timeSerieStatement.ExecContext(ctx,
-						date,
-						fingerprint,
-						string(labelsJSON),
-						mergedLabels["name"],
+						timeSerie.Date,
+						timeSerie.Fingerprint,
+						timeSerie.Labels,
+						timeSerie.Name,
 					)
 					if err != nil {
-						return fmt.Errorf("ExecContext:%w", err)
+						return fmt.Errorf("ExecContext timeSeriesInsertSQL err: %w", err)
 					}
 				}
 			}
 		}
 		return nil
 	})
-	duration := time.Since(start)
-	e.logger.Info("insert logs", zap.Int("records", ld.LogRecordCount()),
-		zap.String("cost", duration.String()))
-	return err
 }
 
 func (e *logsExporter) convertAttributesToLabels(attributes pcommon.Map) model.LabelSet {
