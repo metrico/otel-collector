@@ -120,11 +120,11 @@ func appendTracesInput(schema *TracesSchema, tracesInput *Trace) {
 	schema.Tags.Append(convertTagsToColTupleArray(tracesInput.Tags))
 }
 
-func appendTraces(serviceName string, rawTraces *[]byte, spans ptrace.SpanSlice, resource pcommon.Resource, i, j int, schema *TracesSchema) error {
-	for k := 0; k < spans.Len(); k++ {
-		span := spans.At(k)
+func appendTraces(serviceName string, rawSapns string, spans ptrace.SpanSlice, resource pcommon.Resource, schema *TracesSchema) error {
+	for i := 0; i < spans.Len(); i++ {
+		span := spans.At(i)
 		resource.Attributes().CopyTo(span.Attributes())
-		rawSpan, err := fixRawSpan(gjson.GetBytes(*rawTraces, fmt.Sprintf("resourceSpans.%d.scopeSpans.%d.spans.%d", i, j, k)).String(), span)
+		rawSpan, err := fixRawSpan(gjson.Get(rawSapns, fmt.Sprintf(".%d", i)).String(), span)
 		if err != nil {
 			return err
 		}
@@ -156,7 +156,9 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 				serviceName := serviceNameForResource(rs.Resource())
 				ilss := rs.ScopeSpans()
 				for j := 0; j < ilss.Len(); j++ {
-					err := appendTraces(serviceName, &rawTraces, ilss.At(j).Spans(), rss.At(i).Resource(), i, j, schema)
+					spans := ilss.At(j).Spans()
+					rawSpans := gjson.GetBytes(rawTraces, fmt.Sprintf("resourceSpans.%d.scopeSpans.%d.spans", i, j)).String()
+					err := appendTraces(serviceName, rawSpans, spans, rss.At(i).Resource(), schema)
 					if err != nil {
 						return err
 					}
