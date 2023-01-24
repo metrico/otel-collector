@@ -120,9 +120,23 @@ func appendTracesInput(schema *TracesSchema, tracesInput *Trace) {
 	schema.Tags.Append(convertTagsToColTupleArray(tracesInput.Tags))
 }
 
+func appendTraces(serviceName string, rawTraces *[]byte, spans ptrace.SpanSlice, resource pcommon.Resource, i, j int, schema *TracesSchema) error {
+	for k := 0; k < spans.Len(); k++ {
+		span := spans.At(k)
+		resource.Attributes().CopyTo(span.Attributes())
+		rawSpan, err := fixRawSpan(gjson.GetBytes(*rawTraces, fmt.Sprintf("resourceSpans.%d.scopeSpans.%d.spans.%d", i, j, k)).String(), span)
+		if err != nil {
+			return err
+		}
+		tracesInput := convertTracesInput(span, serviceName, rawSpan)
+		appendTracesInput(schema, tracesInput)
+	}
+	return nil
+
+}
+
 // traceDataPusher implements OTEL exporterhelper.traceDataPusher
 func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) error {
-	mergeAttributes(&td)
 	rawTraces, err := marshaler.MarshalTraces(td)
 	if err != nil {
 		return err
@@ -142,17 +156,9 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 				serviceName := serviceNameForResource(rs.Resource())
 				ilss := rs.ScopeSpans()
 				for j := 0; j < ilss.Len(); j++ {
-					ils := ilss.At(j)
-					spans := ils.Spans()
-					for k := 0; k < spans.Len(); k++ {
-						span := spans.At(k)
-						rs.Resource().Attributes().CopyTo(span.Attributes())
-						rawSpan, err := fixRawSpan(gjson.GetBytes(rawTraces, fmt.Sprintf("resourceSpans.%d.scopeSpans.%d.spans.%d", i, j, k)).String(), span)
-						if err != nil {
-							return err
-						}
-						tracesInput := convertTracesInput(span, serviceName, rawSpan)
-						appendTracesInput(schema, tracesInput)
+					err := appendTraces(serviceName, &rawTraces, ilss.At(j).Spans(), rss.At(i).Resource(), i, j, schema)
+					if err != nil {
+						return err
 					}
 				}
 			}
@@ -234,20 +240,4 @@ func convertTracesInput(otelSpan ptrace.Span, serviceName string, payload string
 	}
 
 	return trace
-}
-
-func mergeAttributes(td *ptrace.Traces) {
-	rss := td.ResourceSpans()
-	for i := 0; i < rss.Len(); i++ {
-		rs := rss.At(i)
-		ilss := rs.ScopeSpans()
-		for j := 0; j < ilss.Len(); j++ {
-			ils := ilss.At(j)
-			spans := ils.Spans()
-			for k := 0; k < spans.Len(); k++ {
-				span := spans.At(k)
-				rs.Resource().Attributes().CopyTo(span.Attributes())
-			}
-		}
-	}
 }

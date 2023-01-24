@@ -167,6 +167,12 @@ func exportNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,
 	}
 	return nil
 }
+func exportSummaryDataPoints(dps pmetric.SummaryDataPointSlice,
+	resource pcommon.Resource, metric pmetric.Metric,
+	samples *[]Sample, timeSeries *[]TimeSerie,
+) error {
+	return nil
+}
 
 func exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 	resource pcommon.Resource, metric pmetric.Metric,
@@ -362,16 +368,50 @@ func exportHistogramDataPoint(pt pmetric.HistogramDataPoint,
 	return nil
 }
 
+func collectSamplesAndTimeSeries(metric pmetric.Metric, resource pcommon.Resource, samples *[]Sample, timeSeries *[]TimeSerie) error {
+	if !isValidAggregationTemporality(metric) {
+		return nil
+	}
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge:
+		dataPoints := metric.Gauge().DataPoints()
+		if err := exportNumberDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
+			return fmt.Errorf("export NumberDataPoints error: %w", err)
+		}
+	case pmetric.MetricTypeSum:
+		dataPoints := metric.Sum().DataPoints()
+		if err := exportNumberDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
+			return fmt.Errorf("export NumberDataPoints error: %w", err)
+		}
+	case pmetric.MetricTypeHistogram:
+		dataPoints := metric.Histogram().DataPoints()
+		for x := 0; x < dataPoints.Len(); x++ {
+			if err := exportHistogramDataPoint(dataPoints.At(x), resource, metric, samples, timeSeries); err != nil {
+				return fmt.Errorf("export HistogramDataPoint error: %w", err)
+			}
+		}
+	case pmetric.MetricTypeSummary:
+		dataPoints := metric.Summary().DataPoints()
+		for x := 0; x < dataPoints.Len(); x++ {
+			if err := exportSummaryDataPoint(dataPoints.At(x), resource, metric, samples, timeSeries); err != nil {
+				return fmt.Errorf("export SummaryDataPoint error: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
 func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metrics) error {
 	sampleSchema := new(SampleSchema)
 	samplesInput := newSamplesInput(sampleSchema)
 
 	timeSerieSchema := new(TimeSerieSchema)
 	timeSeriesInput := newTimeSeriesInput(timeSerieSchema)
+
+	// for collect samples and timeSeries
 	var (
 		samples    []Sample
 		timeSeries []TimeSerie
-		err        error
 	)
 
 	for i := 0; i < md.ResourceMetrics().Len(); i++ {
@@ -380,46 +420,14 @@ func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metric
 		for j := 0; j < resourceMetrics.ScopeMetrics().Len(); j++ {
 			metrics := resourceMetrics.ScopeMetrics().At(j).Metrics()
 			for k := 0; k < metrics.Len(); k++ {
-				metric := metrics.At(k)
-				if !isValidAggregationTemporality(metric) {
-					continue
-				}
-				switch metric.Type() {
-				case pmetric.MetricTypeGauge:
-					dataPoints := metric.Gauge().DataPoints()
-					err = exportNumberDataPoints(dataPoints, resource, metric, &samples, &timeSeries)
-					if err != nil {
-						return fmt.Errorf("export NumberDataPointSlice error: %w", err)
-					}
-				case pmetric.MetricTypeSum:
-					dataPoints := metric.Sum().DataPoints()
-					err = exportNumberDataPoints(dataPoints, resource, metric, &samples, &timeSeries)
-					if err != nil {
-						return fmt.Errorf("export NumberDataPointSlice error: %w", err)
-					}
-				case pmetric.MetricTypeHistogram:
-					dataPoints := metric.Histogram().DataPoints()
-					for x := 0; x < dataPoints.Len(); x++ {
-						err = exportHistogramDataPoint(dataPoints.At(x), resource, metric, &samples, &timeSeries)
-						if err != nil {
-							return fmt.Errorf("export NumberDataPointSlice error: %w", err)
-						}
-					}
-				case pmetric.MetricTypeSummary:
-					dataPoints := metric.Summary().DataPoints()
-					if dataPoints.Len() == 0 {
-						return fmt.Errorf("empty data points. %s is dropped", metric.Name())
-					}
-					for x := 0; x < dataPoints.Len(); x++ {
-						err = exportSummaryDataPoint(dataPoints.At(x), resource, metric, &samples, &timeSeries)
-						if err != nil {
-							return fmt.Errorf("export SummaryDataPoint error: %w", err)
-						}
-					}
+				if err := collectSamplesAndTimeSeries(metrics.At(k), resource, &samples, &timeSeries); err != nil {
+					return err
 				}
 			}
 		}
 	}
+
+	// batch insert sample to clickhouse
 	if err := e.client.Do(ctx, ch.Query{
 		Body:  samplesInput.Into("samples_v3"),
 		Input: samplesInput,
@@ -434,6 +442,7 @@ func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metric
 		return err
 	}
 
+	// batch insert time_series to clickhouse
 	if err := e.client.Do(ctx, ch.Query{
 		Body:  timeSeriesInput.Into("time_series"),
 		Input: timeSeriesInput,
