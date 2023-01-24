@@ -2,70 +2,45 @@ package qrynexporter
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/ClickHouse/ch-go"
+	"github.com/ClickHouse/ch-go/proto"
 	"github.com/go-logfmt/logfmt"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
-
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.uber.org/zap"
 )
 
-const (
-	samplesInsertSQL = `
-  INSERT INTO samples_v3 (
-    fingerprint, 
-    timestamp_ns, 
-    value, 
-    string
-  ) VALUES (
-    ?,
-    ?,
-    ?,
-    ?
-  )`
-	timeSeriesInsertSQL = `
-  INSERT INTO time_series (
-    date,
-    fingerprint, 
-    labels,
-    name
-  ) VALUES (
-    ?,
-    ?,
-    ?,
-    ?
-  )`
-)
-
 type logsExporter struct {
-	db *sql.DB
+	client *ch.Client
 
 	logger *zap.Logger
-	cfg    *Config
 }
 
-func newLogsExporter(logger *zap.Logger, cfg *Config) (*logsExporter, error) {
-	db, err := sql.Open("clickhouse", cfg.DSN)
+func newLogsExporter(ctx context.Context, logger *zap.Logger, cfg *Config) (*logsExporter, error) {
+	opts, err := parseDSN(cfg.DSN)
+	if err != nil {
+		return nil, err
+	}
+	client, err := ch.Dial(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	return &logsExporter{
-		db:     db,
+		client: client,
 		logger: logger,
-		cfg:    cfg,
 	}, nil
 }
 
 // Shutdown will shutdown the exporter.
 func (e *logsExporter) Shutdown(_ context.Context) error {
-	if e.db != nil {
-		return e.db.Close()
+	if e.client != nil {
+		return e.client.Close()
 	}
 	return nil
 }
@@ -172,15 +147,14 @@ func removeAttributes(attrs pcommon.Map, labels model.LabelSet) {
 	})
 }
 
-func timestampFromLogRecord(lr plog.LogRecord) uint64 {
+func timestampFromLogRecord(lr plog.LogRecord) time.Time {
 	if lr.Timestamp() != 0 {
-		return uint64(lr.Timestamp())
+		return lr.Timestamp().AsTime()
 	}
-
 	if lr.ObservedTimestamp() != 0 {
-		return uint64(lr.ObservedTimestamp())
+		return lr.ObservedTimestamp().AsTime()
 	}
-	return uint64(pcommon.NewTimestampFromTime(time.Now()))
+	return time.Now()
 }
 
 // if given key:value pair already exists in keyvals, replace value. Otherwise append
@@ -351,85 +325,131 @@ func convertLogToLine(log plog.LogRecord, res pcommon.Resource, format string) (
 
 }
 
-func convertLogToSample(fingerprint model.Fingerprint, log plog.LogRecord, res pcommon.Resource, format string) (*Sample, error) {
+func convertLogToSample(fingerprint model.Fingerprint, log plog.LogRecord, res pcommon.Resource, format string) (Sample, error) {
 	line, err := convertLogToLine(log, res, format)
 	if err != nil {
-		return nil, err
+		return Sample{}, err
 	}
-	return &Sample{
+	return Sample{
 		Fingerprint: uint64(fingerprint),
-		TimestampNs: int64(timestampFromLogRecord(log)),
+		TimestampNs: timestampFromLogRecord(log).UnixNano(),
 		String:      line,
 	}, nil
 }
 
+func convertLogToTimeSerie(fingerprint model.Fingerprint, log plog.LogRecord, labelSet model.LabelSet) (TimeSerie, error) {
+	labelsJSON, err := json.Marshal(labelSet)
+	if err != nil {
+		return TimeSerie{}, fmt.Errorf("marshal mergedLabels err: %w", err)
+	}
+	timeSerie := TimeSerie{
+		Date:        timestampFromLogRecord(log),
+		Fingerprint: uint64(fingerprint),
+		Labels:      string(labelsJSON),
+		Name:        string(labelSet[model.MetricNameLabel]),
+	}
+	return timeSerie, nil
+}
+
+func newSamplesInput(schema *SampleSchema) proto.Input {
+	return proto.Input{
+		{Name: "fingerprint", Data: &schema.Fingerprint},
+		{Name: "timestamp_ns", Data: &schema.TimestampNs},
+		{Name: "value", Data: &schema.Value},
+		{Name: "string", Data: &schema.String},
+	}
+}
+func newTimeSeriesInput(schema *TimeSerieSchema) proto.Input {
+	return proto.Input{
+		{Name: "date", Data: &schema.Date},
+		{Name: "fingerprint", Data: &schema.Fingerprint},
+		{Name: "labels", Data: &schema.Labels},
+		{Name: "name", Data: &schema.Name},
+	}
+}
+
+func appendSample(schema *SampleSchema, sample Sample) {
+	schema.Fingerprint.Append(sample.Fingerprint)
+	schema.TimestampNs.Append(sample.TimestampNs)
+	schema.Value.Append(sample.Value)
+	schema.String.Append(sample.String)
+}
+
+func appendTimeSerie(schema *TimeSerieSchema, timeSerie TimeSerie) {
+	schema.Date.Append(timeSerie.Date)
+	schema.Fingerprint.Append(timeSerie.Fingerprint)
+	schema.Labels.Append(timeSerie.Labels)
+	schema.Name.Append(timeSerie.Name)
+}
+
 func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
-	start := time.Now()
-	err := Transaction(ctx, e.db, func(tx *sql.Tx) error {
-		sampleStatement, err := tx.PrepareContext(ctx, samplesInsertSQL)
-		if err != nil {
-			return fmt.Errorf("PrepareContext:%w", err)
-		}
-		defer sampleStatement.Close()
-		timeSerieStatement, err := tx.PrepareContext(ctx, timeSeriesInsertSQL)
-		if err != nil {
-			return fmt.Errorf("PrepareContext:%w", err)
-		}
-		defer sampleStatement.Close()
-		for i := 0; i < ld.ResourceLogs().Len(); i++ {
-			logs := ld.ResourceLogs().At(i)
-			for j := 0; j < logs.ScopeLogs().Len(); j++ {
-				rs := logs.ScopeLogs().At(j).LogRecords()
-				for k := 0; k < rs.Len(); k++ {
-					resource := pcommon.NewResource()
-					logs.Resource().CopyTo(resource)
-					log := plog.NewLogRecord()
-					rs.At(k).CopyTo(log)
-					format := getFormatFromFormatHint(log.Attributes(), resource.Attributes())
-					mergedLabels := convertAttributesAndMerge(log.Attributes(), resource.Attributes())
-					// remove the attributes that were promoted to labels
-					removeAttributes(log.Attributes(), mergedLabels)
-					removeAttributes(resource.Attributes(), mergedLabels)
+	sampleSchema := new(SampleSchema)
+	samplesInput := newSamplesInput(sampleSchema)
 
-					fingerprint := mergedLabels.Fingerprint()
-					sample, err := convertLogToSample(fingerprint, log, resource, format)
-					if err != nil {
-						return fmt.Errorf("convertLogToSample error: %w", err)
-					}
-					_, err = sampleStatement.ExecContext(ctx,
-						sample.Fingerprint,
-						sample.TimestampNs,
-						sample.Value,
-						sample.String,
-					)
-					if err != nil {
-						return fmt.Errorf("ExecContext:%w", err)
-					}
+	timeSerieSchema := new(TimeSerieSchema)
+	timeSeriesInput := newTimeSeriesInput(timeSerieSchema)
+	var (
+		samples    []Sample
+		timeSeries []TimeSerie
+	)
+	for i := 0; i < ld.ResourceLogs().Len(); i++ {
+		logs := ld.ResourceLogs().At(i)
+		for j := 0; j < logs.ScopeLogs().Len(); j++ {
+			rs := logs.ScopeLogs().At(j).LogRecords()
+			for k := 0; k < rs.Len(); k++ {
+				resource := pcommon.NewResource()
+				logs.Resource().CopyTo(resource)
+				log := plog.NewLogRecord()
+				rs.At(k).CopyTo(log)
+				format := getFormatFromFormatHint(log.Attributes(), resource.Attributes())
+				mergedLabels := convertAttributesAndMerge(log.Attributes(), resource.Attributes())
+				removeAttributes(log.Attributes(), mergedLabels)
+				removeAttributes(resource.Attributes(), mergedLabels)
 
-					date := time.Unix(0, int64(timestampFromLogRecord(log))).Format("2006-01-02")
-
-					labelsJSON, err := json.Marshal(mergedLabels)
-					if err != nil {
-						return fmt.Errorf("marshal mergedLabels err: %w", err)
-					}
-					_, err = timeSerieStatement.ExecContext(ctx,
-						date,
-						fingerprint,
-						string(labelsJSON),
-						mergedLabels["name"],
-					)
-					if err != nil {
-						return fmt.Errorf("ExecContext:%w", err)
-					}
+				fingerprint := mergedLabels.Fingerprint()
+				sample, err := convertLogToSample(fingerprint, log, resource, format)
+				if err != nil {
+					return fmt.Errorf("convertLogToSample error: %w", err)
 				}
+				samples = append(samples, sample)
+
+				timeSerie, err := convertLogToTimeSerie(fingerprint, log, mergedLabels)
+				if err != nil {
+					return fmt.Errorf("convertLogToTimeSerie error: %w", err)
+				}
+				timeSeries = append(timeSeries, timeSerie)
 			}
 		}
-		return nil
-	})
-	duration := time.Since(start)
-	e.logger.Info("insert logs", zap.Int("records", ld.LogRecordCount()),
-		zap.String("cost", duration.String()))
-	return err
+	}
+
+	if err := e.client.Do(ctx, ch.Query{
+		Body:  samplesInput.Into("samples_v3"),
+		Input: samplesInput,
+		OnInput: func(_ context.Context) error {
+			samplesInput.Reset()
+			for _, sample := range samples {
+				appendSample(sampleSchema, sample)
+			}
+			return nil
+		},
+	}); err != nil {
+		return err
+	}
+
+	if err := e.client.Do(ctx, ch.Query{
+		Body:  timeSeriesInput.Into("time_series"),
+		Input: timeSeriesInput,
+		OnInput: func(_ context.Context) error {
+			timeSeriesInput.Reset()
+			for _, timeSerie := range timeSeries {
+				appendTimeSerie(timeSerieSchema, timeSerie)
+			}
+			return nil
+		},
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (e *logsExporter) convertAttributesToLabels(attributes pcommon.Map) model.LabelSet {

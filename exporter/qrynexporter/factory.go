@@ -2,7 +2,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//       http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -54,7 +54,7 @@ func createTracesExporter(
 ) (component.TracesExporter, error) {
 
 	c := cfg.(*Config)
-	oce, err := newTracesExporter(params.Logger, c)
+	oce, err := newTracesExporter(ctx, params.Logger, c)
 	if err != nil {
 		return nil, fmt.Errorf("cannot configure qryn traces exporter: %w", err)
 	}
@@ -79,7 +79,7 @@ func createLogsExporter(
 	cfg component.ExporterConfig,
 ) (component.LogsExporter, error) {
 	c := cfg.(*Config)
-	exporter, err := newLogsExporter(set.Logger, c)
+	exporter, err := newLogsExporter(ctx, set.Logger, c)
 	if err != nil {
 		return nil, fmt.Errorf("cannot configure qryn logs exporter: %w", err)
 	}
@@ -89,6 +89,31 @@ func createLogsExporter(
 		set,
 		cfg,
 		exporter.pushLogsData,
+		exporterhelper.WithShutdown(exporter.Shutdown),
+		exporterhelper.WithTimeout(c.TimeoutSettings),
+		exporterhelper.WithQueue(c.enforcedQueueSettings()),
+		exporterhelper.WithRetry(c.RetrySettings),
+	)
+}
+
+// createMetricsExporter creates a new exporter for metrics.
+// Metrics are directly insert into clickhouse.
+func createMetricsExporter(
+	ctx context.Context,
+	set component.ExporterCreateSettings,
+	cfg component.ExporterConfig,
+) (component.MetricsExporter, error) {
+	c := cfg.(*Config)
+	exporter, err := newMetricsExporter(ctx, set.Logger, c)
+	if err != nil {
+		return nil, fmt.Errorf("cannot configure qryn logs exporter: %w", err)
+	}
+
+	return exporterhelper.NewMetricsExporter(
+		ctx,
+		set,
+		cfg,
+		exporter.pushMetricsData,
 		exporterhelper.WithShutdown(exporter.Shutdown),
 		exporterhelper.WithTimeout(c.TimeoutSettings),
 		exporterhelper.WithQueue(c.enforcedQueueSettings()),
