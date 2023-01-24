@@ -120,7 +120,19 @@ func appendTracesInput(schema *TracesSchema, tracesInput *Trace) {
 	schema.Tags.Append(convertTagsToColTupleArray(tracesInput.Tags))
 }
 
-func appendTraces(serviceName string, rawSapns string, spans ptrace.SpanSlice, resource pcommon.Resource, schema *TracesSchema) error {
+func exportScopeSpans(serviceName string, rawScopeSapns string, ilss ptrace.ScopeSpansSlice, resource pcommon.Resource, schema *TracesSchema) error {
+	for i := 0; i < ilss.Len(); i++ {
+		spans := ilss.At(i).Spans()
+		rawSpans := gjson.Get(rawScopeSapns, fmt.Sprintf(".%d.spans", i)).String()
+		err := exportSpans(serviceName, rawSpans, spans, resource, schema)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func exportSpans(serviceName string, rawSapns string, spans ptrace.SpanSlice, resource pcommon.Resource, schema *TracesSchema) error {
 	for i := 0; i < spans.Len(); i++ {
 		span := spans.At(i)
 		resource.Attributes().CopyTo(span.Attributes())
@@ -135,13 +147,26 @@ func appendTraces(serviceName string, rawSapns string, spans ptrace.SpanSlice, r
 
 }
 
+func exportResourceSapns(rawTraces string, resourceSpans ptrace.ResourceSpansSlice, schema *TracesSchema) error {
+	for i := 0; i < resourceSpans.Len(); i++ {
+		rs := resourceSpans.At(i)
+		resource := rs.Resource()
+		serviceName := serviceNameForResource(resource)
+		ilss := rs.ScopeSpans()
+		rawScopeSpans := gjson.Get(rawTraces, fmt.Sprintf("resourceSpans.%d.scopeSpans", i)).String()
+		if err := exportScopeSpans(serviceName, rawScopeSpans, ilss, resource, schema); err != nil {
+			return nil
+		}
+	}
+	return nil
+}
+
 // traceDataPusher implements OTEL exporterhelper.traceDataPusher
 func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) error {
 	rawTraces, err := marshaler.MarshalTraces(td)
 	if err != nil {
 		return err
 	}
-
 	schema := new(TracesSchema)
 	input := newTracesInput(schema)
 
@@ -151,18 +176,8 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 		OnInput: func(_ context.Context) error {
 			input.Reset()
 			rss := td.ResourceSpans()
-			for i := 0; i < rss.Len(); i++ {
-				rs := rss.At(i)
-				serviceName := serviceNameForResource(rs.Resource())
-				ilss := rs.ScopeSpans()
-				for j := 0; j < ilss.Len(); j++ {
-					spans := ilss.At(j).Spans()
-					rawSpans := gjson.GetBytes(rawTraces, fmt.Sprintf("resourceSpans.%d.scopeSpans.%d.spans", i, j)).String()
-					err := appendTraces(serviceName, rawSpans, spans, rss.At(i).Resource(), schema)
-					if err != nil {
-						return err
-					}
-				}
+			if err := exportResourceSapns(string(rawTraces), rss, schema); err != nil {
+				return err
 			}
 			return nil
 		},
