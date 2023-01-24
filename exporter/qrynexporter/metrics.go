@@ -167,10 +167,15 @@ func exportNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,
 	}
 	return nil
 }
-func exportSummaryDataPoints(dps pmetric.SummaryDataPointSlice,
+func exportSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice,
 	resource pcommon.Resource, metric pmetric.Metric,
 	samples *[]Sample, timeSeries *[]TimeSerie,
 ) error {
+	for x := 0; x < dataPoints.Len(); x++ {
+		if err := exportSummaryDataPoint(dataPoints.At(x), resource, metric, samples, timeSeries); err != nil {
+			return fmt.Errorf("export SummaryDataPoint error: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -258,6 +263,18 @@ func exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 			quantile.Value = math.Float64frombits(value.StaleNaN)
 		}
 		*samples = append(*samples, quantile)
+	}
+	return nil
+}
+
+func exportHistogramDataPoints(dataPoints pmetric.HistogramDataPointSlice,
+	resource pcommon.Resource, metric pmetric.Metric,
+	samples *[]Sample, timeSeries *[]TimeSerie,
+) error {
+	for x := 0; x < dataPoints.Len(); x++ {
+		if err := exportHistogramDataPoint(dataPoints.At(x), resource, metric, samples, timeSeries); err != nil {
+			return fmt.Errorf("export HistogramDataPoint error: %w", err)
+		}
 	}
 	return nil
 }
@@ -368,7 +385,16 @@ func exportHistogramDataPoint(pt pmetric.HistogramDataPoint,
 	return nil
 }
 
-func collectSamplesAndTimeSeries(metric pmetric.Metric, resource pcommon.Resource, samples *[]Sample, timeSeries *[]TimeSerie) error {
+func collectFromMetrics(metrics pmetric.MetricSlice, resource pcommon.Resource, samples *[]Sample, timeSeries *[]TimeSerie) error {
+	for k := 0; k < metrics.Len(); k++ {
+		if err := collectFromMetric(metrics.At(k), resource, samples, timeSeries); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func collectFromMetric(metric pmetric.Metric, resource pcommon.Resource, samples *[]Sample, timeSeries *[]TimeSerie) error {
 	if !isValidAggregationTemporality(metric) {
 		return nil
 	}
@@ -385,17 +411,13 @@ func collectSamplesAndTimeSeries(metric pmetric.Metric, resource pcommon.Resourc
 		}
 	case pmetric.MetricTypeHistogram:
 		dataPoints := metric.Histogram().DataPoints()
-		for x := 0; x < dataPoints.Len(); x++ {
-			if err := exportHistogramDataPoint(dataPoints.At(x), resource, metric, samples, timeSeries); err != nil {
-				return fmt.Errorf("export HistogramDataPoint error: %w", err)
-			}
+		if err := exportHistogramDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
+			return fmt.Errorf("export HistogramDataPoint error: %w", err)
 		}
 	case pmetric.MetricTypeSummary:
 		dataPoints := metric.Summary().DataPoints()
-		for x := 0; x < dataPoints.Len(); x++ {
-			if err := exportSummaryDataPoint(dataPoints.At(x), resource, metric, samples, timeSeries); err != nil {
-				return fmt.Errorf("export SummaryDataPoint error: %w", err)
-			}
+		if err := exportSummaryDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
+			return fmt.Errorf("export SummaryDataPoints error: %w", err)
 		}
 	}
 	return nil
@@ -419,10 +441,9 @@ func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metric
 		resource := resourceMetrics.Resource()
 		for j := 0; j < resourceMetrics.ScopeMetrics().Len(); j++ {
 			metrics := resourceMetrics.ScopeMetrics().At(j).Metrics()
-			for k := 0; k < metrics.Len(); k++ {
-				if err := collectSamplesAndTimeSeries(metrics.At(k), resource, &samples, &timeSeries); err != nil {
-					return err
-				}
+			err := collectFromMetrics(metrics, resource, &samples, &timeSeries)
+			if err != nil {
+				return err
 			}
 		}
 	}
