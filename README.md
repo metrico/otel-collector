@@ -88,6 +88,10 @@ service:
       processors: [ memory_limiter, resourcedetection/system, resource, batch ]
       exporters: [ qryn ]
     traces:
+      receivers: [ otlp, jaeger, zipkin ]
+      processors: [ memory_limiter, resourcedetection/system, resource, batch ]
+      exporters: [ qryn ]
+    metrics:
       receivers: [ otlp ]
       processors: [ memory_limiter, resourcedetection/system, resource, batch ]
       exporters: [ qryn ]
