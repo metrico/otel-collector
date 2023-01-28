@@ -16,8 +16,30 @@ package qrynexporter
 
 import (
 	"time"
+)
 
-	"github.com/ClickHouse/ch-go/proto"
+const (
+	tracesInputSQL = `INSERT INTO traces_input (
+  trace_id, 
+  span_id, 
+  parent_id, 
+  name, 
+  timestamp_ns, 
+  duration_ns, 
+  service_name,
+  payload_type, 
+  payload, 
+  tags)`
+	samplesSQL = `INSERT INTO samples_v3 (
+  fingerprint,
+  timestamp_ns,
+  value, 
+  string)`
+	TimeSerieSQL = `INSERT INTO time_series (
+  date, 
+  fingerprint,
+  labels,
+  name)`
 )
 
 // Note: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
@@ -54,15 +76,6 @@ type Trace struct {
 }
 
 // Sample represent sample data
-type Sample struct {
-	Fingerprint uint64
-	TimestampNs int64
-	Value       float64
-	String      string
-}
-
-// SampleSchema samples_v3 schema
-//
 // `CREATE TABLE IF NOT EXISTS samples_v3
 // (
 //
@@ -74,22 +87,14 @@ type Sample struct {
 // ) ENGINE = MergeTree
 // PARTITION BY toStartOfDay(toDateTime(timestamp_ns / 1000000000))
 // ORDER BY ({{SAMPLES_ORDER_RUL}})`
-type SampleSchema struct {
-	Fingerprint proto.ColUInt64
-	TimestampNs proto.ColInt64
-	Value       proto.ColFloat64
-	String      proto.ColStr
+type Sample struct {
+	Fingerprint uint64  `ch:"fingerprint"`
+	TimestampNs int64   `ch:"timestamp_ns"`
+	Value       float64 `ch:"value"`
+	String      string  `ch:"string"`
 }
 
 // TimeSerie represent TimeSerie
-type TimeSerie struct {
-	Date        time.Time
-	Fingerprint uint64
-	Labels      string
-	Name        string
-}
-
-// TimeSerieSchema time_series schema
 // `CREATE TABLE IF NOT EXISTS time_series
 // (
 //
@@ -101,9 +106,9 @@ type TimeSerie struct {
 // ) ENGINE = ReplacingMergeTree(date)
 // PARTITION BY date
 // ORDER BY fingerprint
-type TimeSerieSchema struct {
-	Date        proto.ColDate
-	Fingerprint proto.ColUInt64
-	Labels      proto.ColStr
-	Name        proto.ColStr
+type TimeSerie struct {
+	Date        time.Time `ch:"date"`
+	Fingerprint uint64    `ch:"fingerprint"`
+	Labels      string    `ch:"labels"`
+	Name        string    `ch:"name"`
 }

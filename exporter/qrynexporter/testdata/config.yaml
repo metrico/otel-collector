@@ -1,6 +1,5 @@
-clickhouse:
-  dsn: tcp://127.0.0.1:9000/cloki
-clickhouse/full:
+qryn:
+qryn/full:
   dsn: tcp://127.0.0.1:9000/cloki
   timeout: 5s
   retry_on_failure:

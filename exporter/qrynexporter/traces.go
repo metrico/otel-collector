@@ -40,7 +40,7 @@ type tracesExporter struct {
 }
 
 // newTracesExporter returns a SpanWriter for the database
-func newTracesExporter(_ context.Context, logger *zap.Logger, cfg *Config) (*tracesExporter, error) {
+func newTracesExporter(logger *zap.Logger, cfg *Config) (*tracesExporter, error) {
 	opts, err := clickhouse.ParseDSN(cfg.DSN)
 	if err != nil {
 		return nil, err
@@ -124,7 +124,7 @@ func exportSpans(serviceName string, rawSapns string, spans ptrace.SpanSlice, re
 }
 
 func (e *tracesExporter) exportResourceSapns(ctx context.Context, rawTraces string, resourceSpans ptrace.ResourceSpansSlice) error {
-	batch, err := e.db.PrepareBatch(ctx, "INSERT INTO traces_input (trace_id, span_id, parent_id, name, timestamp_ns, duration_ns, service_name, payload_type, payload, tags)")
+	batch, err := e.db.PrepareBatch(ctx, tracesInputSQL)
 	if err != nil {
 		return err
 	}

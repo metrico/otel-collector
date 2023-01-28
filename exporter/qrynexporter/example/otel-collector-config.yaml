@@ -47,7 +47,7 @@ service:
       receivers: [fluentforward, otlp]
       processors: [memory_limiter, resourcedetection/system, resource, batch]
       exporters: [qryn]
-    traces:
-      receivers: [otlp]
-      processors: [memory_limiter, resourcedetection/system, resource, batch]
-      exporters: [qryn]
+    # traces:
+    #   receivers: [otlp]
+    #   processors: [memory_limiter, resourcedetection/system, resource, batch]
+    #   exporters: [qryn]

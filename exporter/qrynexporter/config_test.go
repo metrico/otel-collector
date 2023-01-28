@@ -20,7 +20,7 @@ func TestLoadConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	defaultCfg := createDefaultConfig()
-	defaultCfg.(*Config).DSN = "tcp://127.0.0.1:9000/cloki"
+	defaultCfg.(*Config).DSN = defaultDSN
 
 	tests := []struct {
 		id       component.ID
