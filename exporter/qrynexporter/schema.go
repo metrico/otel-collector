@@ -15,27 +15,10 @@
 package qrynexporter
 
 import (
-	"context"
-	"database/sql"
-	"fmt"
 	"time"
 
 	"github.com/ClickHouse/ch-go/proto"
 )
-
-// Trace represent trace model
-type Trace struct {
-	TraceID     string
-	SpanID      string
-	ParentID    string
-	Name        string
-	TimestampNs int64
-	DurationNs  int64
-	ServiceName string
-	PayloadType int8
-	Payload     string
-	Tags        [][]string
-}
 
 // Note: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
 // We need to align with the schema here.
@@ -56,18 +39,18 @@ type Trace struct {
 //
 // ) Engine=Null
 
-// TracesSchema
-type TracesSchema struct {
-	TraceID     proto.ColStr
-	SpanID      proto.ColStr
-	ParentID    proto.ColStr
-	Name        proto.ColStr
-	TimestampNs proto.ColInt64
-	DurationNs  proto.ColInt64
-	ServiceName proto.ColStr
-	PayloadType proto.ColInt8
-	Payload     proto.ColStr
-	Tags        proto.ColArr[proto.ColTuple]
+// Trace represent trace model
+type Trace struct {
+	TraceID     string     `ch:"trace_id"`
+	SpanID      string     `ch:"span_id"`
+	ParentID    string     `ch:"parent_id"`
+	Name        string     `ch:"name"`
+	TimestampNs int64      `ch:"timestamp_ns"`
+	DurationNs  int64      `ch:"duration_ns"`
+	ServiceName string     `ch:"service_name"`
+	PayloadType int8       `ch:"payload_type"`
+	Payload     string     `ch:"payload"`
+	Tags        [][]string `ch:"tags"`
 }
 
 // Sample represent sample data
@@ -123,19 +106,4 @@ type TimeSerieSchema struct {
 	Fingerprint proto.ColUInt64
 	Labels      proto.ColStr
 	Name        proto.ColStr
-}
-
-// Transaction wrap func under Transaction
-func Transaction(ctx context.Context, db *sql.DB, fn func(tx *sql.Tx) error) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("db.Begin: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
-	if err := fn(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
 }

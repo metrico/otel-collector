@@ -1,0 +1,12 @@
+clickhouse:
+  dsn: tcp://127.0.0.1:9000/cloki
+clickhouse/full:
+  dsn: tcp://127.0.0.1:9000/cloki
+  timeout: 5s
+  retry_on_failure:
+    enabled: true
+    initial_interval: 5s
+    max_interval: 30s
+    max_elapsed_time: 300s
+  sending_queue:
+    queue_size: 100
