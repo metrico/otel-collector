@@ -59,7 +59,7 @@ const (
 )
 
 func convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs pcommon.Map) model.LabelSet {
-	out := defaultExporterLabels
+	out := defaultExporterLabels.Clone()
 
 	// get the hint from the log attributes, not from the resource
 	// the value can be a single resource name to use as label

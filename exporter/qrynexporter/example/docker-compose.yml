@@ -123,3 +123,17 @@ services:
     depends_on:
       - otel-qryn
       - qryn
+  # Metrics generator
+  exporter:
+    build:
+      context:  https://github.com/metrico/qryn-oss-demo.git#:dummy-exporter/
+    container_name: exporter
+    restart: unless-stopped
+    ports:
+      - "9090:8080"
+    networks:
+      - otel-collector
+    depends_on:
+      - otel-qryn
+      - qryn
+
