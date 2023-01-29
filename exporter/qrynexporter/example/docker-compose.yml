@@ -116,7 +116,7 @@ services:
       - --otlp-endpoint=otel-qryn:4317
       - --otlp-insecure
       - --rate=100
-      - --duration=60s
+      - --duration=1000h
     networks:
       - otel-collector
     depends_on:
