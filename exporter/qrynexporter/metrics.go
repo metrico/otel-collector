@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/ClickHouse/ch-go"
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/value"
 	conventions "go.opentelemetry.io/collector/model/semconv/v1.5.0"
@@ -26,30 +26,30 @@ const (
 )
 
 type metricsExporter struct {
-	client *ch.Client
-
 	logger *zap.Logger
+
+	db clickhouse.Conn
 }
 
-func newMetricsExporter(ctx context.Context, logger *zap.Logger, cfg *Config) (*metricsExporter, error) {
-	opts, err := parseDSN(cfg.DSN)
+func newMetricsExporter(logger *zap.Logger, cfg *Config) (*metricsExporter, error) {
+	opts, err := clickhouse.ParseDSN(cfg.DSN)
 	if err != nil {
 		return nil, err
 	}
-	client, err := ch.Dial(ctx, opts)
+	db, err := clickhouse.Open(opts)
 	if err != nil {
 		return nil, err
 	}
 	return &metricsExporter{
-		client: client,
 		logger: logger,
+		db:     db,
 	}, nil
 }
 
 // Shutdown will shutdown the exporter.
 func (e *metricsExporter) Shutdown(_ context.Context) error {
-	if e.client != nil {
-		return e.client.Close()
+	if e.db != nil {
+		e.db.Close()
 	}
 	return nil
 }
@@ -84,7 +84,7 @@ func normalizeLabel(label string) string {
 }
 
 func buildLabelSet(resource pcommon.Resource, attributes pcommon.Map, extras ...string) model.LabelSet {
-	out := defaultExporterLabels
+	out := defaultExporterLabels.Clone()
 	attributes.Range(func(key string, value pcommon.Value) bool {
 		out[model.LabelName(normalizeLabel(key))] = model.LabelValue(value.AsString())
 		return true
@@ -424,11 +424,6 @@ func collectFromMetric(metric pmetric.Metric, resource pcommon.Resource, samples
 }
 
 func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metrics) error {
-	sampleSchema := new(SampleSchema)
-	samplesInput := newSamplesInput(sampleSchema)
-
-	timeSerieSchema := new(TimeSerieSchema)
-	timeSeriesInput := newTimeSeriesInput(timeSerieSchema)
 
 	// for collect samples and timeSeries
 	var (
@@ -448,37 +443,7 @@ func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metric
 		}
 	}
 
-	// batch insert sample to clickhouse
-	if err := e.client.Do(ctx, ch.Query{
-		Body:  samplesInput.Into("samples_v3"),
-		Input: samplesInput,
-		OnInput: func(_ context.Context) error {
-			samplesInput.Reset()
-			for _, sample := range samples {
-				appendSample(sampleSchema, sample)
-			}
-			return nil
-		},
-	}); err != nil {
-		return err
-	}
-
-	// batch insert time_series to clickhouse
-	if err := e.client.Do(ctx, ch.Query{
-		Body:  timeSeriesInput.Into("time_series"),
-		Input: timeSeriesInput,
-		OnInput: func(_ context.Context) error {
-			timeSeriesInput.Reset()
-			for _, timeSerie := range timeSeries {
-				appendTimeSerie(timeSerieSchema, timeSerie)
-			}
-			return nil
-		},
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	return batchSamplesAndTimeSeries(ctx, e.db, samples, timeSeries)
 }
 
 // isValidAggregationTemporality checks whether an OTel metric has a valid

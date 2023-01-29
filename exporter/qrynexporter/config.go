@@ -16,6 +16,7 @@ package qrynexporter
 
 import (
 	"net/url"
+	"strings"
 
 	"github.com/ClickHouse/ch-go"
 	"go.opentelemetry.io/collector/component"
@@ -23,7 +24,9 @@ import (
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
 
-const defaultDSN = "tcp://127.0.0.1:9000/cloki"
+const (
+	defaultDSN = "tcp://127.0.0.1:9000/cloki"
+)
 
 // Config defines configuration for logging exporter.
 type Config struct {
@@ -67,8 +70,14 @@ func parseDSN(dsn string) (ch.Options, error) {
 		return ch.Options{}, err
 	}
 	opts := ch.Options{
-		Address: dsnURL.Host,
+		Address:  dsnURL.Host,
+		Database: dsnURL.Path,
 	}
+	database := strings.TrimPrefix(dsnURL.Path, "/")
+	if database != "" {
+		opts.Database = database
+	}
+
 	if dsnURL.Query().Get("username") != "" {
 		opts.User = dsnURL.Query().Get("username")
 		opts.Password = dsnURL.Query().Get("password")

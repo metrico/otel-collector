@@ -15,27 +15,32 @@
 package qrynexporter
 
 import (
-	"context"
-	"database/sql"
-	"fmt"
 	"time"
-
-	"github.com/ClickHouse/ch-go/proto"
 )
 
-// Trace represent trace model
-type Trace struct {
-	TraceID     string
-	SpanID      string
-	ParentID    string
-	Name        string
-	TimestampNs int64
-	DurationNs  int64
-	ServiceName string
-	PayloadType int8
-	Payload     string
-	Tags        [][]string
-}
+const (
+	tracesInputSQL = `INSERT INTO traces_input (
+  trace_id, 
+  span_id, 
+  parent_id, 
+  name, 
+  timestamp_ns, 
+  duration_ns, 
+  service_name,
+  payload_type, 
+  payload, 
+  tags)`
+	samplesSQL = `INSERT INTO samples_v3 (
+  fingerprint,
+  timestamp_ns,
+  value, 
+  string)`
+	TimeSerieSQL = `INSERT INTO time_series (
+  date, 
+  fingerprint,
+  labels,
+  name)`
+)
 
 // Note: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
 // We need to align with the schema here.
@@ -56,30 +61,21 @@ type Trace struct {
 //
 // ) Engine=Null
 
-// TracesSchema
-type TracesSchema struct {
-	TraceID     proto.ColStr
-	SpanID      proto.ColStr
-	ParentID    proto.ColStr
-	Name        proto.ColStr
-	TimestampNs proto.ColInt64
-	DurationNs  proto.ColInt64
-	ServiceName proto.ColStr
-	PayloadType proto.ColInt8
-	Payload     proto.ColStr
-	Tags        proto.ColArr[proto.ColTuple]
+// Trace represent trace model
+type Trace struct {
+	TraceID     string     `ch:"trace_id"`
+	SpanID      string     `ch:"span_id"`
+	ParentID    string     `ch:"parent_id"`
+	Name        string     `ch:"name"`
+	TimestampNs int64      `ch:"timestamp_ns"`
+	DurationNs  int64      `ch:"duration_ns"`
+	ServiceName string     `ch:"service_name"`
+	PayloadType int8       `ch:"payload_type"`
+	Payload     string     `ch:"payload"`
+	Tags        [][]string `ch:"tags"`
 }
 
 // Sample represent sample data
-type Sample struct {
-	Fingerprint uint64
-	TimestampNs int64
-	Value       float64
-	String      string
-}
-
-// SampleSchema samples_v3 schema
-//
 // `CREATE TABLE IF NOT EXISTS samples_v3
 // (
 //
@@ -91,22 +87,14 @@ type Sample struct {
 // ) ENGINE = MergeTree
 // PARTITION BY toStartOfDay(toDateTime(timestamp_ns / 1000000000))
 // ORDER BY ({{SAMPLES_ORDER_RUL}})`
-type SampleSchema struct {
-	Fingerprint proto.ColUInt64
-	TimestampNs proto.ColInt64
-	Value       proto.ColFloat64
-	String      proto.ColStr
+type Sample struct {
+	Fingerprint uint64  `ch:"fingerprint"`
+	TimestampNs int64   `ch:"timestamp_ns"`
+	Value       float64 `ch:"value"`
+	String      string  `ch:"string"`
 }
 
 // TimeSerie represent TimeSerie
-type TimeSerie struct {
-	Date        time.Time
-	Fingerprint uint64
-	Labels      string
-	Name        string
-}
-
-// TimeSerieSchema time_series schema
 // `CREATE TABLE IF NOT EXISTS time_series
 // (
 //
@@ -118,24 +106,9 @@ type TimeSerie struct {
 // ) ENGINE = ReplacingMergeTree(date)
 // PARTITION BY date
 // ORDER BY fingerprint
-type TimeSerieSchema struct {
-	Date        proto.ColDate
-	Fingerprint proto.ColUInt64
-	Labels      proto.ColStr
-	Name        proto.ColStr
-}
-
-// Transaction wrap func under Transaction
-func Transaction(ctx context.Context, db *sql.DB, fn func(tx *sql.Tx) error) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("db.Begin: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
-	if err := fn(tx); err != nil {
-		return err
-	}
-	return tx.Commit()
+type TimeSerie struct {
+	Date        time.Time `ch:"date"`
+	Fingerprint uint64    `ch:"fingerprint"`
+	Labels      string    `ch:"labels"`
+	Name        string    `ch:"name"`
 }

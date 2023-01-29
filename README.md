@@ -45,18 +45,25 @@ receivers:
     endpoint: 0.0.0.0:9411
   fluentforward:
     endpoint: 0.0.0.0:24224
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector'
+          scrape_interval: 5s
+          static_configs:
+            - targets: ['exporter:8080']
 processors:
   batch:
-    send_batch_size: 100000
+    send_batch_size: 10000
     timeout: 5s
   memory_limiter:
     check_interval: 2s
     limit_mib: 1800
     spike_limit_mib: 500
   resourcedetection/system:
-    detectors: [ "system" ]
+    detectors: ['system']
     system:
-      hostname_sources: [ "os" ]
+      hostname_sources: ['os']
   resource:
     attributes:
       - key: service.name
@@ -64,7 +71,7 @@ processors:
         action: upsert
 exporters:
   qryn:
-    dsn: tcp://clickhouse:9000/cloki
+    dsn: tcp://clickhouse-server:9000/cloki?username=default&password=*************
     timeout: 10s
     sending_queue:
       queue_size: 100
@@ -81,18 +88,18 @@ extensions:
     size_mib: 1000
 
 service:
-  extensions: [ pprof, zpages, health_check ]
+  extensions: [pprof, zpages, health_check]
   pipelines:
     logs:
-      receivers: [ fluentforward, otlp ]
-      processors: [ memory_limiter, resourcedetection/system, resource, batch ]
-      exporters: [ qryn ]
+      receivers: [fluentforward, otlp]
+      processors: [memory_limiter, resourcedetection/system, resource, batch]
+      exporters: [qryn]
     traces:
-      receivers: [ otlp, jaeger, zipkin ]
-      processors: [ memory_limiter, resourcedetection/system, resource, batch ]
-      exporters: [ qryn ]
+      receivers: [otlp, jaeger, zipkin]
+      processors: [memory_limiter, resourcedetection/system, resource, batch]
+      exporters: [qryn]
     metrics:
-      receivers: [ otlp ]
-      processors: [ memory_limiter, resourcedetection/system, resource, batch ]
-      exporters: [ qryn ]
+      receivers: [prometheus]
+      processors: [memory_limiter, resourcedetection/system, resource, batch]
+      exporters: [qryn]
 ```

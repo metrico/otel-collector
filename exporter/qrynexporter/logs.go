@@ -7,8 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ClickHouse/ch-go"
-	"github.com/ClickHouse/ch-go/proto"
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/go-logfmt/logfmt"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -17,30 +16,30 @@ import (
 )
 
 type logsExporter struct {
-	client *ch.Client
-
 	logger *zap.Logger
+
+	db clickhouse.Conn
 }
 
-func newLogsExporter(ctx context.Context, logger *zap.Logger, cfg *Config) (*logsExporter, error) {
-	opts, err := parseDSN(cfg.DSN)
+func newLogsExporter(logger *zap.Logger, cfg *Config) (*logsExporter, error) {
+	opts, err := clickhouse.ParseDSN(cfg.DSN)
 	if err != nil {
 		return nil, err
 	}
-	client, err := ch.Dial(ctx, opts)
+	db, err := clickhouse.Open(opts)
 	if err != nil {
 		return nil, err
 	}
 	return &logsExporter{
-		client: client,
 		logger: logger,
+		db:     db,
 	}, nil
 }
 
 // Shutdown will shutdown the exporter.
 func (e *logsExporter) Shutdown(_ context.Context) error {
-	if e.client != nil {
-		return e.client.Close()
+	if e.db != nil {
+		e.db.Close()
 	}
 	return nil
 }
@@ -60,7 +59,7 @@ const (
 )
 
 func convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs pcommon.Map) model.LabelSet {
-	out := defaultExporterLabels
+	out := defaultExporterLabels.Clone()
 
 	// get the hint from the log attributes, not from the resource
 	// the value can be a single resource name to use as label
@@ -351,43 +350,7 @@ func convertLogToTimeSerie(fingerprint model.Fingerprint, log plog.LogRecord, la
 	return timeSerie, nil
 }
 
-func newSamplesInput(schema *SampleSchema) proto.Input {
-	return proto.Input{
-		{Name: "fingerprint", Data: &schema.Fingerprint},
-		{Name: "timestamp_ns", Data: &schema.TimestampNs},
-		{Name: "value", Data: &schema.Value},
-		{Name: "string", Data: &schema.String},
-	}
-}
-func newTimeSeriesInput(schema *TimeSerieSchema) proto.Input {
-	return proto.Input{
-		{Name: "date", Data: &schema.Date},
-		{Name: "fingerprint", Data: &schema.Fingerprint},
-		{Name: "labels", Data: &schema.Labels},
-		{Name: "name", Data: &schema.Name},
-	}
-}
-
-func appendSample(schema *SampleSchema, sample Sample) {
-	schema.Fingerprint.Append(sample.Fingerprint)
-	schema.TimestampNs.Append(sample.TimestampNs)
-	schema.Value.Append(sample.Value)
-	schema.String.Append(sample.String)
-}
-
-func appendTimeSerie(schema *TimeSerieSchema, timeSerie TimeSerie) {
-	schema.Date.Append(timeSerie.Date)
-	schema.Fingerprint.Append(timeSerie.Fingerprint)
-	schema.Labels.Append(timeSerie.Labels)
-	schema.Name.Append(timeSerie.Name)
-}
-
 func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
-	sampleSchema := new(SampleSchema)
-	samplesInput := newSamplesInput(sampleSchema)
-
-	timeSerieSchema := new(TimeSerieSchema)
-	timeSeriesInput := newTimeSeriesInput(timeSerieSchema)
 	var (
 		samples    []Sample
 		timeSeries []TimeSerie
@@ -422,34 +385,38 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 		}
 	}
 
-	if err := e.client.Do(ctx, ch.Query{
-		Body:  samplesInput.Into("samples_v3"),
-		Input: samplesInput,
-		OnInput: func(_ context.Context) error {
-			samplesInput.Reset()
-			for _, sample := range samples {
-				appendSample(sampleSchema, sample)
-			}
-			return nil
-		},
-	}); err != nil {
+	return batchSamplesAndTimeSeries(ctx, e.db, samples, timeSeries)
+}
+
+func batchSamplesAndTimeSeries(ctx context.Context, db clickhouse.Conn, samples []Sample, timeSeries []TimeSerie) error {
+	samplesBatch, err := db.PrepareBatch(ctx, samplesSQL)
+	if err != nil {
+		return err
+	}
+	for _, sample := range samples {
+		if err := samplesBatch.AppendStruct(&sample); err != nil {
+			return err
+		}
+	}
+	if err := samplesBatch.Send(); err != nil {
 		return err
 	}
 
-	if err := e.client.Do(ctx, ch.Query{
-		Body:  timeSeriesInput.Into("time_series"),
-		Input: timeSeriesInput,
-		OnInput: func(_ context.Context) error {
-			timeSeriesInput.Reset()
-			for _, timeSerie := range timeSeries {
-				appendTimeSerie(timeSerieSchema, timeSerie)
-			}
-			return nil
-		},
-	}); err != nil {
+	timeSeriesBatch, err := db.PrepareBatch(ctx, TimeSerieSQL)
+	if err != nil {
 		return err
 	}
+	for _, timeSerie := range timeSeries {
+		if err := timeSeriesBatch.AppendStruct(&timeSerie); err != nil {
+			return err
+		}
+	}
+	if err := timeSeriesBatch.Send(); err != nil {
+		return err
+	}
+
 	return nil
+
 }
 
 func (e *logsExporter) convertAttributesToLabels(attributes pcommon.Map) model.LabelSet {

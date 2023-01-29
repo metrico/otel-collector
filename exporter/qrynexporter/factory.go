@@ -33,6 +33,8 @@ func NewFactory() component.ExporterFactory {
 		typeStr,
 		createDefaultConfig,
 		component.WithTracesExporter(createTracesExporter, stability),
+		component.WithLogsExporter(createLogsExporter, stability),
+		component.WithMetricsExporter(createMetricsExporter, stability),
 	)
 }
 
@@ -42,6 +44,7 @@ func createDefaultConfig() component.ExporterConfig {
 		TimeoutSettings:  exporterhelper.NewDefaultTimeoutSettings(),
 		QueueSettings:    QueueSettings{QueueSize: exporterhelper.NewDefaultQueueSettings().QueueSize},
 		RetrySettings:    exporterhelper.NewDefaultRetrySettings(),
+		DSN:              defaultDSN,
 	}
 }
 
@@ -54,7 +57,7 @@ func createTracesExporter(
 ) (component.TracesExporter, error) {
 
 	c := cfg.(*Config)
-	oce, err := newTracesExporter(ctx, params.Logger, c)
+	oce, err := newTracesExporter(params.Logger, c)
 	if err != nil {
 		return nil, fmt.Errorf("cannot configure qryn traces exporter: %w", err)
 	}
@@ -79,7 +82,7 @@ func createLogsExporter(
 	cfg component.ExporterConfig,
 ) (component.LogsExporter, error) {
 	c := cfg.(*Config)
-	exporter, err := newLogsExporter(ctx, set.Logger, c)
+	exporter, err := newLogsExporter(set.Logger, c)
 	if err != nil {
 		return nil, fmt.Errorf("cannot configure qryn logs exporter: %w", err)
 	}
@@ -104,7 +107,7 @@ func createMetricsExporter(
 	cfg component.ExporterConfig,
 ) (component.MetricsExporter, error) {
 	c := cfg.(*Config)
-	exporter, err := newMetricsExporter(ctx, set.Logger, c)
+	exporter, err := newMetricsExporter(set.Logger, c)
 	if err != nil {
 		return nil, fmt.Errorf("cannot configure qryn logs exporter: %w", err)
 	}

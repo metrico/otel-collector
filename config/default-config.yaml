@@ -27,12 +27,12 @@ processors:
 extensions:
   zpages: {}
 exporters:
-  clickhousetraces:
-    datasource: tcp://localhost:9000/?database=cloki
+  qryn:
+    dsn: tcp://localhost:9000/cloki
 service:
   extensions: [zpages]
   pipelines:
     traces:
       receivers: [jaeger, otlp]
       processors: [batch]
-      exporters: [clickhousetraces]
+      exporters: [qryn]
