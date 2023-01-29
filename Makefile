@@ -1,7 +1,7 @@
 COMMIT_SHA ?= $(shell git rev-parse HEAD)
 REPONAME ?= metrico
 IMAGE_NAME ?= "otel-collector"
-CONFIG_FILE ?= ./config/default-config.yaml
+CONFIG_FILE ?= ./config/example-config.yaml
 DOCKER_TAG ?= latest
 
 GOOS ?= $(shell go env GOOS)
