@@ -15,10 +15,6 @@
 package qrynexporter
 
 import (
-	"net/url"
-	"strings"
-
-	"github.com/ClickHouse/ch-go"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
@@ -62,25 +58,4 @@ func (cfg *Config) enforcedQueueSettings() exporterhelper.QueueSettings {
 		NumConsumers: 1,
 		QueueSize:    cfg.QueueSettings.QueueSize,
 	}
-}
-
-func parseDSN(dsn string) (ch.Options, error) {
-	dsnURL, err := url.Parse(dsn)
-	if err != nil {
-		return ch.Options{}, err
-	}
-	opts := ch.Options{
-		Address:  dsnURL.Host,
-		Database: dsnURL.Path,
-	}
-	database := strings.TrimPrefix(dsnURL.Path, "/")
-	if database != "" {
-		opts.Database = database
-	}
-
-	if dsnURL.Query().Get("username") != "" {
-		opts.User = dsnURL.Query().Get("username")
-		opts.Password = dsnURL.Query().Get("password")
-	}
-	return opts, nil
 }
