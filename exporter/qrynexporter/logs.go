@@ -282,8 +282,8 @@ func convertLogToLine(log plog.LogRecord, res pcommon.Resource, format string) (
 		}
 		logRecord := logRecord{
 			Body:       bodyData,
-			TraceID:    log.TraceID().HexString(),
-			SpanID:     log.SpanID().HexString(),
+			TraceID:    log.TraceID().String(),
+			SpanID:     log.SpanID().String(),
 			Severity:   log.SeverityText(),
 			Attributes: log.Attributes().AsRaw(),
 			Resources:  log.Attributes().AsRaw(),
@@ -296,10 +296,10 @@ func convertLogToLine(log plog.LogRecord, res pcommon.Resource, format string) (
 	case formatLogfmt:
 		keyvals := bodyToKeyvals(log.Body())
 		if traceID := log.TraceID(); !traceID.IsEmpty() {
-			keyvals = keyvalsReplaceOrAppend(keyvals, "traceID", log.TraceID().HexString())
+			keyvals = keyvalsReplaceOrAppend(keyvals, "traceID", log.TraceID().String())
 		}
 		if spanID := log.SpanID(); !spanID.IsEmpty() {
-			keyvals = keyvalsReplaceOrAppend(keyvals, "spanID", log.SpanID().HexString())
+			keyvals = keyvalsReplaceOrAppend(keyvals, "spanID", log.SpanID().String())
 		}
 		severity := log.SeverityText()
 		if severity != "" {

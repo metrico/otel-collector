@@ -1,17 +1,16 @@
 receivers:
   fluentforward:
     endpoint: 0.0.0.0:24224
+  prometheus:
   otlp:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
-  prometheus:
-    config:
-      scrape_configs:
-        - job_name: 'otel-collector'
-          scrape_interval: 5s
-          static_configs:
-            - targets: ['exporter:8080']
+  otlp/dummy:
+    protocols:
+      grpc:
+        endpoint: 'localhost:12345'
+
 processors:
   batch:
     send_batch_size: 1000
@@ -24,17 +23,17 @@ processors:
     detectors: ['system']
     system:
       hostname_sources: ['os']
-  resource:
-    attributes:
-      - key: service.name
-        value: 'serviceName'
-        action: upsert
   spanmetrics:
-    metrics_exporter: otlp/spanmetrics
+    metrics_exporter: 'otlp'
     latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
     dimensions_cache_size: 1500
+    dimensions:
+      - name: http.method
+        default: GET
+      - name: http.status_code
+      - name: span.name
   servicegraph:
-    metrics_exporter: otlp/spanmetrics
+    metrics_exporter: 'otlp'
     latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
     dimensions: [cluster, namespace]
     store:
@@ -45,6 +44,10 @@ processors:
       - include: calls_total
         action: update
         new_name: traces_spanmetrics_calls_total
+        operations:
+          - action: update_label
+            label: operation
+            new_label: span.name
       - include: latency
         action: update
         new_name: traces_spanmetrics_latency
@@ -59,8 +62,7 @@ exporters:
       initial_interval: 5s
       max_interval: 30s
       max_elapsed_time: 300s
-
-  otlp/spanmetrics:
+  otlp:
     endpoint: localhost:4317
     tls:
       insecure: true
@@ -77,17 +79,21 @@ service:
   pipelines:
     logs:
       receivers: [fluentforward, otlp]
-      processors: [memory_limiter, resourcedetection/system, resource, batch]
+      processors: [memory_limiter, resourcedetection/system, batch]
       exporters: [qryn]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, resource, spanmetrics, servicegraph, batch]
+      processors: [resourcedetection/system, spanmetrics, batch]
       exporters: [qryn]
-    metrics/spanmetrics:
+    traces/servicegraph:
       receivers: [otlp]
-      processors: [metricstransform]
-      exporters: [qryn]
+      processors: [servicegraph]
+      exporters: [otlp]
+    metrics/spanmetrics:
+      receivers: [otlp/dummy]
+      exporters: [otlp]
     metrics:
-      receivers: [prometheus]
-      processors: [memory_limiter, resourcedetection/system, resource, batch]
-      exporters: [qryn, otlp/spanmetrics]
+      receivers: [otlp]
+      processors:
+        [memory_limiter, resourcedetection/system, metricstransform, batch]
+      exporters: [qryn]

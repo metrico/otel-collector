@@ -8,7 +8,7 @@ volumes:
   clickhouse_data:
 
 services:
-  otel-qryn:
+  otel-collector:
     build:
       context: ../../../
       dockerfile: cmd/otel-collector/Dockerfile
@@ -32,7 +32,6 @@ services:
       - clickhouse-server
     expose:
       - '4317:4317' # otlp receiver
-
     networks:
       - otel-collector
 
@@ -47,7 +46,7 @@ services:
       CLICKHOUSE_PASSWORD: demo
     ports:
       - 8123:8123
-      - 9000:9000
+      - 19000:9000
     healthcheck:
       test: ['CMD', 'wget', '--spider', '-q', '127.0.0.1:8123/ping']
       interval: 1s
@@ -99,7 +98,7 @@ services:
     networks:
       - otel-collector
     depends_on:
-      - otel-qryn
+      - otel-collector
     logging:
       driver: fluentd
       options:
@@ -108,31 +107,27 @@ services:
         fluentd-sub-second-precision: 'true'
     stop_signal: SIGKILL
 
-  # Traces generator
-  tracegen:
-    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
-    command:
-      - traces
-      - --otlp-endpoint=otel-qryn:4317
-      - --otlp-insecure
-      - --rate=100
-      - --duration=1000h
-    networks:
-      - otel-collector
-    depends_on:
-      - otel-qryn
-      - qryn
-  # Metrics generator
-  exporter:
-    build:
-      context:  https://github.com/metrico/qryn-oss-demo.git#:dummy-exporter/
-    container_name: exporter
-    restart: unless-stopped
-    ports:
-      - "9090:8080"
-    networks:
-      - otel-collector
-    depends_on:
-      - otel-qryn
-      - qryn
-
+  # Traces and metrics generator
+  # demo-client:
+  #   build:
+  #     context: https://github.com/open-telemetry/opentelemetry-collector-contrib.git#:examples/demo/client
+  #   restart: always
+  #   environment:
+  #     - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+  #     - DEMO_SERVER_ENDPOINT=http://demo-server:7080/hello
+  #   depends_on:
+  #     - demo-server
+  #   networks:
+  #     - otel-collector
+  # demo-server:
+  #   build:
+  #     context: https://github.com/open-telemetry/opentelemetry-collector-contrib.git#:examples/demo/server
+  #   restart: always
+  #   environment:
+  #     - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+  #   ports:
+  #     - "7080"
+  #   depends_on:
+  #     - otel-collector
+  #   networks:
+  #     - otel-collector

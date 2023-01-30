@@ -16,7 +16,7 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/config"
+	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
 
@@ -28,23 +28,22 @@ const (
 )
 
 // NewFactory creates a factory for Logging exporter
-func NewFactory() component.ExporterFactory {
-	return component.NewExporterFactory(
+func NewFactory() exporter.Factory {
+	return exporter.NewFactory(
 		typeStr,
 		createDefaultConfig,
-		component.WithTracesExporter(createTracesExporter, stability),
-		component.WithLogsExporter(createLogsExporter, stability),
-		component.WithMetricsExporter(createMetricsExporter, stability),
+		exporter.WithTraces(createTracesExporter, stability),
+		exporter.WithLogs(createLogsExporter, stability),
+		exporter.WithMetrics(createMetricsExporter, stability),
 	)
 }
 
-func createDefaultConfig() component.ExporterConfig {
+func createDefaultConfig() component.Config {
 	return &Config{
-		ExporterSettings: config.NewExporterSettings(component.NewID(typeStr)),
-		TimeoutSettings:  exporterhelper.NewDefaultTimeoutSettings(),
-		QueueSettings:    QueueSettings{QueueSize: exporterhelper.NewDefaultQueueSettings().QueueSize},
-		RetrySettings:    exporterhelper.NewDefaultRetrySettings(),
-		DSN:              defaultDSN,
+		TimeoutSettings: exporterhelper.NewDefaultTimeoutSettings(),
+		QueueSettings:   QueueSettings{QueueSize: exporterhelper.NewDefaultQueueSettings().QueueSize},
+		RetrySettings:   exporterhelper.NewDefaultRetrySettings(),
+		DSN:             defaultDSN,
 	}
 }
 
@@ -52,9 +51,9 @@ func createDefaultConfig() component.ExporterConfig {
 // Traces are directly insert into clickhouse.
 func createTracesExporter(
 	ctx context.Context,
-	params component.ExporterCreateSettings,
-	cfg component.ExporterConfig,
-) (component.TracesExporter, error) {
+	params exporter.CreateSettings,
+	cfg component.Config,
+) (exporter.Traces, error) {
 
 	c := cfg.(*Config)
 	oce, err := newTracesExporter(params.Logger, c)
@@ -78,9 +77,9 @@ func createTracesExporter(
 // Logs are directly insert into clickhouse.
 func createLogsExporter(
 	ctx context.Context,
-	set component.ExporterCreateSettings,
-	cfg component.ExporterConfig,
-) (component.LogsExporter, error) {
+	set exporter.CreateSettings,
+	cfg component.Config,
+) (exporter.Logs, error) {
 	c := cfg.(*Config)
 	exporter, err := newLogsExporter(set.Logger, c)
 	if err != nil {
@@ -103,9 +102,9 @@ func createLogsExporter(
 // Metrics are directly insert into clickhouse.
 func createMetricsExporter(
 	ctx context.Context,
-	set component.ExporterCreateSettings,
-	cfg component.ExporterConfig,
-) (component.MetricsExporter, error) {
+	set exporter.CreateSettings,
+	cfg component.Config,
+) (exporter.Metrics, error) {
 	c := cfg.(*Config)
 	exporter, err := newMetricsExporter(set.Logger, c)
 	if err != nil {

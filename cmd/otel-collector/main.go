@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/service"
+	"go.opentelemetry.io/collector/otelcol"
 )
 
 func main() {
@@ -21,7 +21,7 @@ func main() {
 		Version:     "latest",
 	}
 
-	params := service.CollectorSettings{
+	params := otelcol.CollectorSettings{
 		Factories: factories,
 		BuildInfo: info,
 	}
@@ -31,8 +31,8 @@ func main() {
 	}
 }
 
-func runInteractive(params service.CollectorSettings) error {
-	cmd := service.NewCommand(params)
+func runInteractive(params otelcol.CollectorSettings) error {
+	cmd := otelcol.NewCommand(params)
 	err := cmd.Execute()
 	if err != nil {
 		return fmt.Errorf("application run finished with error: %w", err)

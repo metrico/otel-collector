@@ -110,37 +110,41 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/windowseventlogreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/zipkinreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/zookeeperreceiver"
-	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/loggingexporter"
 	"go.opentelemetry.io/collector/exporter/otlpexporter"
 	"go.opentelemetry.io/collector/exporter/otlphttpexporter"
+	"go.opentelemetry.io/collector/extension"
 	"go.opentelemetry.io/collector/extension/ballastextension"
 	"go.opentelemetry.io/collector/extension/zpagesextension"
+	"go.opentelemetry.io/collector/otelcol"
+	"go.opentelemetry.io/collector/processor"
 	"go.opentelemetry.io/collector/processor/batchprocessor"
 	"go.opentelemetry.io/collector/processor/memorylimiterprocessor"
+	"go.opentelemetry.io/collector/receiver"
 	"go.opentelemetry.io/collector/receiver/otlpreceiver"
 	"go.uber.org/multierr"
 
 	"github.com/metrico/otel-collector/exporter/qrynexporter"
 )
 
-func components() (component.Factories, error) {
+func components() (otelcol.Factories, error) {
 	var errs []error
 	factories, err := CoreComponents()
 	if err != nil {
-		return component.Factories{}, err
+		return otelcol.Factories{}, err
 	}
 
-	var extensions []component.ExtensionFactory
+	var extensions []extension.Factory
 	for _, ext := range factories.Extensions {
 		extensions = append(extensions, ext)
 	}
-	factories.Extensions, err = component.MakeExtensionFactoryMap(extensions...)
+	factories.Extensions, err = extension.MakeFactoryMap(extensions...)
 	if err != nil {
 		errs = append(errs, err)
 	}
 
-	receivers := []component.ReceiverFactory{
+	receivers := []receiver.Factory{
 		activedirectorydsreceiver.NewFactory(),
 		aerospikereceiver.NewFactory(),
 		apachereceiver.NewFactory(),
@@ -220,12 +224,12 @@ func components() (component.Factories, error) {
 	for _, rcv := range factories.Receivers {
 		receivers = append(receivers, rcv)
 	}
-	factories.Receivers, err = component.MakeReceiverFactoryMap(receivers...)
+	factories.Receivers, err = receiver.MakeFactoryMap(receivers...)
 	if err != nil {
 		errs = append(errs, err)
 	}
 
-	exporters := []component.ExporterFactory{
+	exporters := []exporter.Factory{
 		qrynexporter.NewFactory(),
 		carbonexporter.NewFactory(),
 		fileexporter.NewFactory(),
@@ -242,12 +246,12 @@ func components() (component.Factories, error) {
 	for _, exp := range factories.Exporters {
 		exporters = append(exporters, exp)
 	}
-	factories.Exporters, err = component.MakeExporterFactoryMap(exporters...)
+	factories.Exporters, err = exporter.MakeFactoryMap(exporters...)
 	if err != nil {
 		errs = append(errs, err)
 	}
 
-	processors := []component.ProcessorFactory{
+	processors := []processor.Factory{
 		attributesprocessor.NewFactory(),
 		cumulativetodeltaprocessor.NewFactory(),
 		deltatorateprocessor.NewFactory(),
@@ -273,7 +277,7 @@ func components() (component.Factories, error) {
 	for _, pr := range factories.Processors {
 		processors = append(processors, pr)
 	}
-	factories.Processors, err = component.MakeProcessorFactoryMap(processors...)
+	factories.Processors, err = processor.MakeFactoryMap(processors...)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -282,12 +286,12 @@ func components() (component.Factories, error) {
 }
 
 func CoreComponents() (
-	component.Factories,
+	otelcol.Factories,
 	error,
 ) {
 	var errs error
 
-	extensions, err := component.MakeExtensionFactoryMap(
+	extensions, err := extension.MakeFactoryMap(
 		ballastextension.NewFactory(),
 		healthcheckextension.NewFactory(),
 		pprofextension.NewFactory(),
@@ -295,25 +299,25 @@ func CoreComponents() (
 	)
 	errs = multierr.Append(errs, err)
 
-	receivers, err := component.MakeReceiverFactoryMap(
+	receivers, err := receiver.MakeFactoryMap(
 		otlpreceiver.NewFactory(),
 	)
 	errs = multierr.Append(errs, err)
 
-	exporters, err := component.MakeExporterFactoryMap(
+	exporters, err := exporter.MakeFactoryMap(
 		loggingexporter.NewFactory(),
 		otlpexporter.NewFactory(),
 		otlphttpexporter.NewFactory(),
 	)
 	errs = multierr.Append(errs, err)
 
-	processors, err := component.MakeProcessorFactoryMap(
+	processors, err := processor.MakeFactoryMap(
 		batchprocessor.NewFactory(),
 		memorylimiterprocessor.NewFactory(),
 	)
 	errs = multierr.Append(errs, err)
 
-	factories := component.Factories{
+	factories := otelcol.Factories{
 		Extensions: extensions,
 		Receivers:  receivers,
 		Processors: processors,
