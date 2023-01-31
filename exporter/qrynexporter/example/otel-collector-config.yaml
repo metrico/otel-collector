@@ -31,7 +31,6 @@ processors:
       - name: http.method
         default: GET
       - name: http.status_code
-      - name: span.name
   servicegraph:
     metrics_exporter: 'otlp'
     latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
@@ -48,6 +47,9 @@ processors:
           - action: update_label
             label: operation
             new_label: span.name
+          - action: update_label
+            label: service.name
+            new_label: service
       - include: latency
         action: update
         new_name: traces_spanmetrics_latency

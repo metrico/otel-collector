@@ -55,6 +55,28 @@ services:
     networks:
       - otel-collector
 
+  qryn-ctrl:
+    image: qxip/qryn-ctrl:latest
+    container_name: qryn-ctrl
+    environment:
+      - CLICKHOUSE_SERVER=clickhouse-server
+      - QRYN_DATABASE_DATA_0_NAME=qryn
+      - QRYN_DATABASE_DATA_0_HOST=clickhouse-server
+      - QRYN_DATABASE_DATA_0_PORT=9000
+      - QRYN_DATABASE_DATA_0_USER=qryn
+      - QRYN_DATABASE_DATA_0_PASS=demo
+      - QRYN_DATABASE_DATA_0_DEBUG=true
+      - QRYN_DATABASE_DATA_0_SECURE=false
+      - QRYN_DATABASE_DATA_0_ASYNC_INSERT=false
+    command:
+      - sh
+      - -c
+      - ./qryn-ctrl -initialize_db
+    networks:
+      - otel-collector
+    depends_on:
+      clickhouse-server:
+        condition: service_healthy
   qryn:
     image: qxip/qryn:latest
     container_name: qryn
@@ -108,26 +130,26 @@ services:
     stop_signal: SIGKILL
 
   # Traces and metrics generator
-  # demo-client:
-  #   build:
-  #     context: https://github.com/open-telemetry/opentelemetry-collector-contrib.git#:examples/demo/client
-  #   restart: always
-  #   environment:
-  #     - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
-  #     - DEMO_SERVER_ENDPOINT=http://demo-server:7080/hello
-  #   depends_on:
-  #     - demo-server
-  #   networks:
-  #     - otel-collector
-  # demo-server:
-  #   build:
-  #     context: https://github.com/open-telemetry/opentelemetry-collector-contrib.git#:examples/demo/server
-  #   restart: always
-  #   environment:
-  #     - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
-  #   ports:
-  #     - "7080"
-  #   depends_on:
-  #     - otel-collector
-  #   networks:
-  #     - otel-collector
+  demo-client:
+    build:
+      context: https://github.com/open-telemetry/opentelemetry-collector-contrib.git#:examples/demo/client
+    restart: always
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - DEMO_SERVER_ENDPOINT=http://demo-server:7080/hello
+    depends_on:
+      - demo-server
+    networks:
+      - otel-collector
+  demo-server:
+    build:
+      context: https://github.com/open-telemetry/opentelemetry-collector-contrib.git#:examples/demo/server
+    restart: always
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+    ports:
+      - "7080"
+    depends_on:
+      - otel-collector
+    networks:
+      - otel-collector
