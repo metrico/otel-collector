@@ -15,6 +15,18 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	hintAttributes = "loki.attribute.labels"
+	hintResources  = "loki.resource.labels"
+	hintTenant     = "loki.tenant"
+	hintFormat     = "loki.format"
+
+	levelAttributeName = "level"
+
+	formatJSON   string = "json"
+	formatLogfmt string = "logfmt"
+)
+
 type logsExporter struct {
 	logger *zap.Logger
 
@@ -44,33 +56,32 @@ func (e *logsExporter) Shutdown(_ context.Context) error {
 	return nil
 }
 
-var defaultExporterLabels = model.LabelSet{"exporter": "OTLP"}
-
-const (
-	hintAttributes = "loki.attribute.labels"
-	hintResources  = "loki.resource.labels"
-	hintTenant     = "loki.tenant"
-	hintFormat     = "loki.format"
-)
-
-const (
-	formatJSON   string = "json"
-	formatLogfmt string = "logfmt"
-)
+func hasLokiHint(attrs pcommon.Map) bool {
+	for _, hint := range []string{hintAttributes, hintResources, hintTenant} {
+		if _, ok := attrs.Get(hint); ok {
+			return true
+		}
+	}
+	return false
+}
 
 func convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs pcommon.Map) model.LabelSet {
-	out := defaultExporterLabels.Clone()
+	out := model.LabelSet{}
+	if resourcesToLabel, found := resAttrs.Get(hintResources); found {
+		labels := convertSelectedAttributesToLabels(resAttrs, resourcesToLabel)
+		out = out.Merge(labels)
+	}
 
 	// get the hint from the log attributes, not from the resource
 	// the value can be a single resource name to use as label
 	// or a slice of string values
 	if resourcesToLabel, found := logAttrs.Get(hintResources); found {
-		labels := convertAttributesToLabels(resAttrs, resourcesToLabel)
+		labels := convertSelectedAttributesToLabels(resAttrs, resourcesToLabel)
 		out = out.Merge(labels)
 	}
 
 	if attributesToLabel, found := logAttrs.Get(hintAttributes); found {
-		labels := convertAttributesToLabels(logAttrs, attributesToLabel)
+		labels := convertSelectedAttributesToLabels(logAttrs, attributesToLabel)
 		out = out.Merge(labels)
 	}
 
@@ -78,14 +89,19 @@ func convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs pcommon.Map) model
 	// if it is not found
 	if resourcesToLabel, found := resAttrs.Get(hintTenant); !found {
 		if attributesToLabel, found := logAttrs.Get(hintTenant); found {
-			labels := convertAttributesToLabels(logAttrs, attributesToLabel)
+			labels := convertSelectedAttributesToLabels(logAttrs, attributesToLabel)
 			out = out.Merge(labels)
 		}
 	} else {
-		labels := convertAttributesToLabels(resAttrs, resourcesToLabel)
+		labels := convertSelectedAttributesToLabels(resAttrs, resourcesToLabel)
 		out = out.Merge(labels)
 	}
 
+	// if no any hint found, just mergedLabels
+	if !hasLokiHint(logAttrs) && !hasLokiHint(resAttrs) {
+		out = out.Merge(convertAttributesToLabels(logAttrs))
+		out = out.Merge(convertAttributesToLabels(resAttrs))
+	}
 	return out
 }
 
@@ -108,7 +124,7 @@ func parseAttributeNames(attrsToSelect pcommon.Value) []string {
 	return out
 }
 
-func convertAttributesToLabels(attributes pcommon.Map, attrsToSelect pcommon.Value) model.LabelSet {
+func convertSelectedAttributesToLabels(attributes pcommon.Map, attrsToSelect pcommon.Value) model.LabelSet {
 	out := model.LabelSet{}
 
 	attrs := parseAttributeNames(attrsToSelect)
@@ -364,6 +380,10 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 				logs.Resource().CopyTo(resource)
 				log := plog.NewLogRecord()
 				rs.At(k).CopyTo(log)
+
+				// adds level attribute from log.severityNumber
+				addLogLevelAttributeAndHint(log)
+
 				format := getFormatFromFormatHint(log.Attributes(), resource.Attributes())
 				mergedLabels := convertAttributesAndMerge(log.Attributes(), resource.Attributes())
 				removeAttributes(log.Attributes(), mergedLabels)
@@ -419,17 +439,60 @@ func batchSamplesAndTimeSeries(ctx context.Context, db clickhouse.Conn, samples 
 
 }
 
-func (e *logsExporter) convertAttributesToLabels(attributes pcommon.Map) model.LabelSet {
+func convertAttributesToLabels(attributes pcommon.Map) model.LabelSet {
 	ls := model.LabelSet{}
 
 	attributes.Range(func(k string, v pcommon.Value) bool {
-		if v.Type() != pcommon.ValueTypeStr {
-			e.logger.Debug("Failed to convert attribute value to Loki label value, value is not a string", zap.String("attribute", k))
-			return true
-		}
-		ls[model.LabelName(k)] = model.LabelValue(v.Str())
+		ls[model.LabelName(k)] = model.LabelValue(v.AsString())
 		return true
 	})
 
 	return ls
+}
+
+func addLogLevelAttributeAndHint(log plog.LogRecord) {
+	if log.SeverityNumber() == plog.SeverityNumberUnspecified {
+		return
+	}
+	addLogLevelHit(log)
+	if _, found := log.Attributes().Get(levelAttributeName); !found {
+		level := severityNumberToLevel[log.SeverityNumber().String()]
+		log.Attributes().PutStr(levelAttributeName, level)
+	}
+}
+
+func addLogLevelHit(log plog.LogRecord) {
+	if value, found := log.Attributes().Get(hintAttributes); found && !strings.Contains(value.AsString(), levelAttributeName) {
+		log.Attributes().PutStr(hintAttributes, fmt.Sprintf("%s,%s", value.AsString(), levelAttributeName))
+	} else {
+		log.Attributes().PutStr(hintAttributes, levelAttributeName)
+	}
+}
+
+var severityNumberToLevel = map[string]string{
+	plog.SeverityNumberUnspecified.String(): "UNSPECIFIED",
+	plog.SeverityNumberTrace.String():       "TRACE",
+	plog.SeverityNumberTrace2.String():      "TRACE2",
+	plog.SeverityNumberTrace3.String():      "TRACE3",
+	plog.SeverityNumberTrace4.String():      "TRACE4",
+	plog.SeverityNumberDebug.String():       "DEBUG",
+	plog.SeverityNumberDebug2.String():      "DEBUG2",
+	plog.SeverityNumberDebug3.String():      "DEBUG3",
+	plog.SeverityNumberDebug4.String():      "DEBUG4",
+	plog.SeverityNumberInfo.String():        "INFO",
+	plog.SeverityNumberInfo2.String():       "INFO2",
+	plog.SeverityNumberInfo3.String():       "INFO3",
+	plog.SeverityNumberInfo4.String():       "INFO4",
+	plog.SeverityNumberWarn.String():        "WARN",
+	plog.SeverityNumberWarn2.String():       "WARN2",
+	plog.SeverityNumberWarn3.String():       "WARN3",
+	plog.SeverityNumberWarn4.String():       "WARN4",
+	plog.SeverityNumberError.String():       "ERROR",
+	plog.SeverityNumberError2.String():      "ERROR2",
+	plog.SeverityNumberError3.String():      "ERROR3",
+	plog.SeverityNumberError4.String():      "ERROR4",
+	plog.SeverityNumberFatal.String():       "FATAL",
+	plog.SeverityNumberFatal2.String():      "FATAL2",
+	plog.SeverityNumberFatal3.String():      "FATAL3",
+	plog.SeverityNumberFatal4.String():      "FATAL4",
 }
