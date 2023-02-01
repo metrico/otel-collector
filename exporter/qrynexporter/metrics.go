@@ -29,6 +29,8 @@ type metricsExporter struct {
 	logger *zap.Logger
 
 	db clickhouse.Conn
+
+	namespace string
 }
 
 func newMetricsExporter(logger *zap.Logger, cfg *Config) (*metricsExporter, error) {
@@ -41,8 +43,9 @@ func newMetricsExporter(logger *zap.Logger, cfg *Config) (*metricsExporter, erro
 		return nil, err
 	}
 	return &metricsExporter{
-		logger: logger,
-		db:     db,
+		logger:    logger,
+		db:        db,
+		namespace: cfg.Namespace,
 	}, nil
 }
 
@@ -116,12 +119,39 @@ func buildLabelSet(resource pcommon.Resource, attributes pcommon.Map, extras ...
 	return out
 }
 
-func exportNumberDataPoint(pt pmetric.NumberDataPoint,
+// Build a Prometheus-compliant metric name for the specified metric
+//
+// Metric name is prefixed with specified namespace and underscore (if any).
+// Namespace is not cleaned up. Make sure specified namespace follows Prometheus
+// naming convention.
+//
+// See rules at https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels
+// and https://prometheus.io/docs/practices/naming/#metric-and-label-naming
+func buildPromCompliantName(metric pmetric.Metric, namespace string) string {
+	var metricName string
+
+	// Simple case (no full normalization, no units, etc.), we simply trim out forbidden chars
+	metricName = removePromForbiddenRunes(metric.Name())
+
+	// Namespace?
+	if namespace != "" {
+		return namespace + "_" + metricName
+	}
+
+	// Metric name starts with a digit? Prefix it with an underscore
+	if metricName != "" && unicode.IsDigit(rune(metricName[0])) {
+		metricName = "_" + metricName
+	}
+
+	return metricName
+}
+
+func (e *metricsExporter) exportNumberDataPoint(pt pmetric.NumberDataPoint,
 	resource pcommon.Resource, metric pmetric.Metric,
 	samples *[]Sample, timeSeries *[]TimeSerie,
 ) error {
-	metricName := removePromForbiddenRunes(metric.Name())
-	labelSet := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, metricName)
+	metricName := buildPromCompliantName(metric, e.namespace)
+	labelSet := buildLabelSet(resource, pt.Attributes(), model.MetricNameLabel, metricName)
 	fingerprint := labelSet.Fingerprint()
 	sample := Sample{
 		TimestampNs: pt.Timestamp().AsTime().UnixNano(),
@@ -154,40 +184,40 @@ func exportNumberDataPoint(pt pmetric.NumberDataPoint,
 	return nil
 }
 
-func exportNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,
+func (e *metricsExporter) exportNumberDataPoints(dataPoints pmetric.NumberDataPointSlice,
 	resource pcommon.Resource, metric pmetric.Metric,
 	samples *[]Sample, timeSeries *[]TimeSerie,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		pt := dataPoints.At(x)
-		err := exportNumberDataPoint(pt, resource, metric, samples, timeSeries)
+		err := e.exportNumberDataPoint(pt, resource, metric, samples, timeSeries)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
 }
-func exportSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice,
+func (e *metricsExporter) exportSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice,
 	resource pcommon.Resource, metric pmetric.Metric,
 	samples *[]Sample, timeSeries *[]TimeSerie,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
-		if err := exportSummaryDataPoint(dataPoints.At(x), resource, metric, samples, timeSeries); err != nil {
+		if err := e.exportSummaryDataPoint(dataPoints.At(x), resource, metric, samples, timeSeries); err != nil {
 			return fmt.Errorf("export SummaryDataPoint error: %w", err)
 		}
 	}
 	return nil
 }
 
-func exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
+func (e *metricsExporter) exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 	resource pcommon.Resource, metric pmetric.Metric,
 	samples *[]Sample, timeSeries *[]TimeSerie,
 ) error {
-	baseName := normalizeLabel(metric.Name())
+	baseName := buildPromCompliantName(metric, e.namespace)
 	timestampNs := pt.Timestamp().AsTime().UnixNano()
 
 	// treat sum as a sample in an individual TimeSeries
-	sumLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+sumSuffix)
+	sumLabels := buildLabelSet(resource, pt.Attributes(), model.MetricNameLabel, baseName+sumSuffix)
 	labelsJSON, err := json.Marshal(sumLabels)
 	if err != nil {
 		return fmt.Errorf("marshal label set err: %w", err)
@@ -212,7 +242,7 @@ func exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 	*samples = append(*samples, sum)
 
 	// treat count as a sample in an individual TimeSeries
-	countLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+countSuffix)
+	countLabels := buildLabelSet(resource, pt.Attributes(), model.MetricNameLabel, baseName+countSuffix)
 	labelsJSON, err = json.Marshal(countLabels)
 	if err != nil {
 		return fmt.Errorf("marshal label set error: %w", err)
@@ -267,27 +297,27 @@ func exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 	return nil
 }
 
-func exportHistogramDataPoints(dataPoints pmetric.HistogramDataPointSlice,
+func (e *metricsExporter) exportHistogramDataPoints(dataPoints pmetric.HistogramDataPointSlice,
 	resource pcommon.Resource, metric pmetric.Metric,
 	samples *[]Sample, timeSeries *[]TimeSerie,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
-		if err := exportHistogramDataPoint(dataPoints.At(x), resource, metric, samples, timeSeries); err != nil {
+		if err := e.exportHistogramDataPoint(dataPoints.At(x), resource, metric, samples, timeSeries); err != nil {
 			return fmt.Errorf("export HistogramDataPoint error: %w", err)
 		}
 	}
 	return nil
 }
 
-func exportHistogramDataPoint(pt pmetric.HistogramDataPoint,
+func (e *metricsExporter) exportHistogramDataPoint(pt pmetric.HistogramDataPoint,
 	resource pcommon.Resource, metric pmetric.Metric,
 	samples *[]Sample, timeSeries *[]TimeSerie,
 ) error {
-	baseName := normalizeLabel(metric.Name())
+	baseName := buildPromCompliantName(metric, e.namespace)
 	timestampNs := pt.Timestamp().AsTime().UnixNano()
 	// add sum count labels
 	if pt.HasSum() {
-		sumLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+sumSuffix)
+		sumLabels := buildLabelSet(resource, pt.Attributes(), model.MetricNameLabel, baseName+sumSuffix)
 		labelsJSON, err := json.Marshal(sumLabels)
 		if err != nil {
 			return fmt.Errorf("marshal label set error: %w", err)
@@ -310,7 +340,7 @@ func exportHistogramDataPoint(pt pmetric.HistogramDataPoint,
 	}
 
 	// add count labels sample
-	countLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+countSuffix)
+	countLabels := buildLabelSet(resource, pt.Attributes(), model.MetricNameLabel, baseName+countSuffix)
 	fingerprint := countLabels.Fingerprint()
 	count := Sample{
 		Fingerprint: uint64(countLabels.Fingerprint()),
@@ -337,7 +367,7 @@ func exportHistogramDataPoint(pt pmetric.HistogramDataPoint,
 		bound := pt.ExplicitBounds().At(i)
 		boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 		cumulativeCount += pt.BucketCounts().At(i)
-		bucketLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+bucketSuffix, "le", boundStr)
+		bucketLabels := buildLabelSet(resource, pt.Attributes(), model.MetricNameLabel, baseName+bucketSuffix, "le", boundStr)
 		fingerprint := bucketLabels.Fingerprint()
 		bucket := Sample{
 			Fingerprint: uint64(fingerprint),
@@ -358,7 +388,7 @@ func exportHistogramDataPoint(pt pmetric.HistogramDataPoint,
 		*timeSeries = append(*timeSeries, timeSerie)
 	}
 	// add le=+Inf bucket
-	bucketLabels := buildLabelSet(resource, resource.Attributes(), model.MetricNameLabel, baseName+bucketSuffix, "le", "+Inf")
+	bucketLabels := buildLabelSet(resource, pt.Attributes(), model.MetricNameLabel, baseName+bucketSuffix, "le", "+Inf")
 	fingerprint = bucketLabels.Fingerprint()
 	infBucket := &Sample{
 		Fingerprint: uint64(fingerprint),
@@ -385,38 +415,38 @@ func exportHistogramDataPoint(pt pmetric.HistogramDataPoint,
 	return nil
 }
 
-func collectFromMetrics(metrics pmetric.MetricSlice, resource pcommon.Resource, samples *[]Sample, timeSeries *[]TimeSerie) error {
+func (e *metricsExporter) collectFromMetrics(metrics pmetric.MetricSlice, resource pcommon.Resource, samples *[]Sample, timeSeries *[]TimeSerie) error {
 	for k := 0; k < metrics.Len(); k++ {
-		if err := collectFromMetric(metrics.At(k), resource, samples, timeSeries); err != nil {
+		if err := e.collectFromMetric(metrics.At(k), resource, samples, timeSeries); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func collectFromMetric(metric pmetric.Metric, resource pcommon.Resource, samples *[]Sample, timeSeries *[]TimeSerie) error {
+func (e *metricsExporter) collectFromMetric(metric pmetric.Metric, resource pcommon.Resource, samples *[]Sample, timeSeries *[]TimeSerie) error {
 	if !isValidAggregationTemporality(metric) {
 		return nil
 	}
 	switch metric.Type() {
 	case pmetric.MetricTypeGauge:
 		dataPoints := metric.Gauge().DataPoints()
-		if err := exportNumberDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
+		if err := e.exportNumberDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
 			return fmt.Errorf("export NumberDataPoints error: %w", err)
 		}
 	case pmetric.MetricTypeSum:
 		dataPoints := metric.Sum().DataPoints()
-		if err := exportNumberDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
+		if err := e.exportNumberDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
 			return fmt.Errorf("export NumberDataPoints error: %w", err)
 		}
 	case pmetric.MetricTypeHistogram:
 		dataPoints := metric.Histogram().DataPoints()
-		if err := exportHistogramDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
+		if err := e.exportHistogramDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
 			return fmt.Errorf("export HistogramDataPoint error: %w", err)
 		}
 	case pmetric.MetricTypeSummary:
 		dataPoints := metric.Summary().DataPoints()
-		if err := exportSummaryDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
+		if err := e.exportSummaryDataPoints(dataPoints, resource, metric, samples, timeSeries); err != nil {
 			return fmt.Errorf("export SummaryDataPoints error: %w", err)
 		}
 	}
@@ -436,7 +466,7 @@ func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metric
 		resource := resourceMetrics.Resource()
 		for j := 0; j < resourceMetrics.ScopeMetrics().Len(); j++ {
 			metrics := resourceMetrics.ScopeMetrics().At(j).Metrics()
-			err := collectFromMetrics(metrics, resource, &samples, &timeSeries)
+			err := e.collectFromMetrics(metrics, resource, &samples, &timeSeries)
 			if err != nil {
 				return err
 			}

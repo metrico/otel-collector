@@ -69,6 +69,25 @@ processors:
       - key: service.name
         value: "serviceName"
         action: upsert
+  spanmetrics:
+    metrics_exporter: otlp/spanmetrics
+    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
+    dimensions_cache_size: 1500
+  servicegraph:
+    metrics_exporter: otlp/spanmetrics
+    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
+    dimensions: [cluster, namespace]
+    store:
+      ttl: 2s
+      max_items: 200
+  metricstransform:
+    transforms:
+      - include: calls_total
+        action: update
+        new_name: traces_spanmetrics_calls_total
+      - include: latency
+        action: update
+        new_name: traces_spanmetrics_latency
 exporters:
   qryn:
     dsn: tcp://clickhouse-server:9000/cloki?username=default&password=*************
@@ -80,6 +99,10 @@ exporters:
       initial_interval: 5s
       max_interval: 30s
       max_elapsed_time: 300s
+  otlp/spanmetrics:
+    endpoint: localhost:4317
+    tls:
+      insecure: true
 extensions:
   health_check:
   pprof:
@@ -96,7 +119,12 @@ service:
       exporters: [qryn]
     traces:
       receivers: [otlp, jaeger, zipkin]
-      processors: [memory_limiter, resourcedetection/system, resource, batch]
+      processors: [memory_limiter, resourcedetection/system, resource, spanmetrics, servicegraph, batch]
+      exporters: [qryn]
+    # for align with https://grafana.com/docs/tempo/latest/metrics-generator/span_metrics/#how-to-run
+    metrics/spanmetrics:
+      receivers: [otlp]
+      processors: [metricstransform]
       exporters: [qryn]
     metrics:
       receivers: [prometheus]

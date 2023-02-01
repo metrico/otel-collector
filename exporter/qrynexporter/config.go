@@ -16,7 +16,6 @@ package qrynexporter
 
 import (
 	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/config"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
 
@@ -26,7 +25,6 @@ const (
 
 // Config defines configuration for logging exporter.
 type Config struct {
-	config.ExporterSettings        `mapstructure:",squash"` // squash ensures fields are correctly decoded in embedded struct
 	exporterhelper.TimeoutSettings `mapstructure:",squash"`
 	exporterhelper.RetrySettings   `mapstructure:"retry_on_failure"`
 	// QueueSettings is a subset of exporterhelper.QueueSettings,
@@ -37,6 +35,10 @@ type Config struct {
 	// For tcp protocol reference: [ClickHouse/clickhouse-go#dsn](https://github.com/ClickHouse/clickhouse-go#dsn).
 	// For http protocol reference: [mailru/go-clickhouse/#dsn](https://github.com/mailru/go-clickhouse/#dsn).
 	DSN string `mapstructure:"dsn"`
+
+	// prefix attached to each exported metric name
+	// See: https://prometheus.io/docs/practices/naming/#metric-names
+	Namespace string `mapstructure:"metrics_namespace"`
 }
 
 // QueueSettings is a subset of exporterhelper.QueueSettings.
@@ -45,7 +47,7 @@ type QueueSettings struct {
 	QueueSize int `mapstructure:"queue_size"`
 }
 
-var _ component.ExporterConfig = (*Config)(nil)
+var _ component.Config = (*Config)(nil)
 
 // Validate checks if the exporter configuration is valid
 func (cfg *Config) Validate() error {

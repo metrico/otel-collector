@@ -19,7 +19,6 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/ClickHouse/ch-go/proto"
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/tidwall/gjson"
@@ -81,19 +80,6 @@ func fixRawSpan(rawSpan string, span ptrace.Span) (string, error) {
 	return rawSpan, nil
 }
 
-func convertTagsToColTupleArray(tags [][]string) []proto.ColTuple {
-	tupleArr := make([]proto.ColTuple, len(tags))
-	for i, tag := range tags {
-		first := new(proto.ColStr)
-		second := new(proto.ColStr)
-		t := proto.ColTuple{first, second}
-		first.Append(tag[0])
-		second.Append(tag[1])
-		tupleArr[i] = t
-	}
-	return tupleArr
-}
-
 func exportScopeSpans(serviceName string, rawScopeSapns string, ilss ptrace.ScopeSpansSlice, resource pcommon.Resource, batch driver.Batch) error {
 	for i := 0; i < ilss.Len(); i++ {
 		spans := ilss.At(i).Spans()
@@ -109,7 +95,6 @@ func exportScopeSpans(serviceName string, rawScopeSapns string, ilss ptrace.Scop
 func exportSpans(serviceName string, rawSapns string, spans ptrace.SpanSlice, resource pcommon.Resource, batch driver.Batch) error {
 	for i := 0; i < spans.Len(); i++ {
 		span := spans.At(i)
-		resource.Attributes().CopyTo(span.Attributes())
 		rawSpan, err := fixRawSpan(gjson.Get(rawSapns, fmt.Sprintf("%d", i)).String(), span)
 		if err != nil {
 			return err
@@ -145,6 +130,7 @@ func (e *tracesExporter) exportResourceSapns(ctx context.Context, rawTraces stri
 
 // traceDataPusher implements OTEL exporterhelper.traceDataPusher
 func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) error {
+	mergeAttributes(&td)
 	rawTraces, err := marshaler.MarshalTraces(td)
 	if err != nil {
 		return err
@@ -217,9 +203,9 @@ func convertTracesInput(otelSpan ptrace.Span, serviceName string, payload string
 	})
 
 	trace := &Trace{
-		TraceID:     otelSpan.TraceID().HexString(),
-		SpanID:      otelSpan.SpanID().HexString(),
-		ParentID:    otelSpan.ParentSpanID().HexString(),
+		TraceID:     otelSpan.TraceID().String(),
+		SpanID:      otelSpan.SpanID().String(),
+		ParentID:    otelSpan.ParentSpanID().String(),
 		Name:        otelSpan.Name(),
 		TimestampNs: int64(otelSpan.StartTimestamp()),
 		DurationNs:  int64(durationNano),
@@ -230,4 +216,20 @@ func convertTracesInput(otelSpan ptrace.Span, serviceName string, payload string
 	}
 
 	return trace
+}
+
+func mergeAttributes(td *ptrace.Traces) {
+	rss := td.ResourceSpans()
+	for i := 0; i < rss.Len(); i++ {
+		rs := rss.At(i)
+		ilss := rs.ScopeSpans()
+		for j := 0; j < ilss.Len(); j++ {
+			ils := ilss.At(j)
+			spans := ils.Spans()
+			for k := 0; k < spans.Len(); k++ {
+				span := spans.At(k)
+				rs.Resource().Attributes().CopyTo(span.Attributes())
+			}
+		}
+	}
 }
