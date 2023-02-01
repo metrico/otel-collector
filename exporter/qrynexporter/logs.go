@@ -57,7 +57,7 @@ func (e *logsExporter) Shutdown(_ context.Context) error {
 }
 
 func hasLokiHint(attrs pcommon.Map) bool {
-	for _, hint := range []string{hintAttributes, hintResources, hintTenant, hintTenant} {
+	for _, hint := range []string{hintAttributes, hintResources, hintTenant} {
 		if _, ok := attrs.Get(hint); ok {
 			return true
 		}
