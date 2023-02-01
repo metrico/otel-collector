@@ -57,8 +57,8 @@ func (e *logsExporter) Shutdown(_ context.Context) error {
 }
 
 func hasLokiHint(attrs pcommon.Map) bool {
-	for _, hit := range []string{hintAttributes, hintResources, hintTenant, hintTenant} {
-		if _, ok := attrs.Get(hit); ok {
+	for _, hint := range []string{hintAttributes, hintResources, hintTenant, hintTenant} {
+		if _, ok := attrs.Get(hint); ok {
 			return true
 		}
 	}
@@ -97,7 +97,7 @@ func convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs pcommon.Map) model
 		out = out.Merge(labels)
 	}
 
-	// if no any hit found, just mergedLabels
+	// if no any hint found, just mergedLabels
 	if !hasLokiHint(logAttrs) && !hasLokiHint(resAttrs) {
 		out = out.Merge(convertAttributesToLabels(logAttrs))
 		out = out.Merge(convertAttributesToLabels(resAttrs))
