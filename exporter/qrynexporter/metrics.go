@@ -87,7 +87,7 @@ func normalizeLabel(label string) string {
 }
 
 func buildLabelSet(resource pcommon.Resource, attributes pcommon.Map, extras ...string) model.LabelSet {
-	out := defaultExporterLabels.Clone()
+	out := model.LabelSet{}
 	attributes.Range(func(key string, value pcommon.Value) bool {
 		out[model.LabelName(normalizeLabel(key))] = model.LabelValue(value.AsString())
 		return true
