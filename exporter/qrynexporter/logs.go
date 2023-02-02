@@ -106,12 +106,12 @@ func (e *logsExporter) convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs 
 	}
 
 	if e.attritubeLabels != "" {
-		labels := convertSelectedAttributesToLabels(resAttrs, pcommon.NewValueStr(e.resourceLabels))
+		labels := convertSelectedAttributesToLabels(logAttrs, pcommon.NewValueStr(e.resourceLabels))
 		out = out.Merge(labels)
 	}
 
 	if e.resourceLabels != "" {
-		labels := convertSelectedAttributesToLabels(logAttrs, pcommon.NewValueStr(e.attritubeLabels))
+		labels := convertSelectedAttributesToLabels(resAttrs, pcommon.NewValueStr(e.attritubeLabels))
 		out = out.Merge(labels)
 	}
 
