@@ -36,15 +36,26 @@ type Config struct {
 	// For http protocol reference: [mailru/go-clickhouse/#dsn](https://github.com/mailru/go-clickhouse/#dsn).
 	DSN string `mapstructure:"dsn"`
 
-	// prefix attached to each exported metric name
-	// See: https://prometheus.io/docs/practices/naming/#metric-names
-	Namespace string `mapstructure:"metrics_namespace"`
+	Logs    LogsConfig    `mapstructure:"logs"`
+	Metrics MetricsConfig `mapstructure:"metrics"`
 }
 
 // QueueSettings is a subset of exporterhelper.QueueSettings.
 type QueueSettings struct {
 	// QueueSize set the length of the sending queue
 	QueueSize int `mapstructure:"queue_size"`
+}
+
+type LogsConfig struct {
+	AttritubeLabels string `mapstructure:"attritube_labels"`
+	ResourceLabels  string `mapstructure:"resource_labels"`
+	Format          string `mapstructure:"format"`
+}
+
+type MetricsConfig struct {
+	// prefix attached to each exported metric name
+	// See: https://prometheus.io/docs/practices/naming/#metric-names
+	Namespace string `mapstructure:"namespace"`
 }
 
 var _ component.Config = (*Config)(nil)
