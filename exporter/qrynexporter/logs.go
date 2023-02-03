@@ -23,6 +23,7 @@ const (
 
 	levelAttributeName = "level"
 
+	formatRaw    string = "raw"
 	formatJSON   string = "json"
 	formatLogfmt string = "logfmt"
 )
@@ -31,6 +32,10 @@ type logsExporter struct {
 	logger *zap.Logger
 
 	db clickhouse.Conn
+
+	attritubeLabels string
+	resourceLabels  string
+	format          string
 }
 
 func newLogsExporter(logger *zap.Logger, cfg *Config) (*logsExporter, error) {
@@ -43,8 +48,11 @@ func newLogsExporter(logger *zap.Logger, cfg *Config) (*logsExporter, error) {
 		return nil, err
 	}
 	return &logsExporter{
-		logger: logger,
-		db:     db,
+		logger:          logger,
+		db:              db,
+		format:          cfg.Logs.Format,
+		attritubeLabels: cfg.Logs.AttritubeLabels,
+		resourceLabels:  cfg.Logs.ResourceLabels,
 	}, nil
 }
 
@@ -65,7 +73,7 @@ func hasLokiHint(attrs pcommon.Map) bool {
 	return false
 }
 
-func convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs pcommon.Map) model.LabelSet {
+func (e *logsExporter) convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs pcommon.Map) model.LabelSet {
 	out := model.LabelSet{}
 	if resourcesToLabel, found := resAttrs.Get(hintResources); found {
 		labels := convertSelectedAttributesToLabels(resAttrs, resourcesToLabel)
@@ -94,6 +102,16 @@ func convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs pcommon.Map) model
 		}
 	} else {
 		labels := convertSelectedAttributesToLabels(resAttrs, resourcesToLabel)
+		out = out.Merge(labels)
+	}
+
+	if e.attritubeLabels != "" {
+		labels := convertSelectedAttributesToLabels(logAttrs, pcommon.NewValueStr(e.resourceLabels))
+		out = out.Merge(labels)
+	}
+
+	if e.resourceLabels != "" {
+		labels := convertSelectedAttributesToLabels(resAttrs, pcommon.NewValueStr(e.attritubeLabels))
 		out = out.Merge(labels)
 	}
 
@@ -140,7 +158,7 @@ func convertSelectedAttributesToLabels(attributes pcommon.Map, attrsToSelect pco
 }
 
 func getFormatFromFormatHint(logAttr pcommon.Map, resourceAttr pcommon.Map) string {
-	format := formatJSON
+	format := formatRaw
 	formatVal, found := resourceAttr.Get(hintFormat)
 	if !found {
 		formatVal, found = logAttr.Get(hintFormat)
@@ -334,8 +352,10 @@ func convertLogToLine(log plog.LogRecord, res pcommon.Resource, format string) (
 			return "", err
 		}
 		return string(logfmtLine), nil
+	case formatRaw:
+		return log.Body().AsString(), nil
 	default:
-		return "", fmt.Errorf("invalid format %s. Expected one of: %s, %s", format, formatJSON, formatLogfmt)
+		return "", fmt.Errorf("invalid format %s. Expected one of: %s, %s, %s", format, formatJSON, formatLogfmt, formatRaw)
 	}
 
 }
@@ -385,7 +405,10 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 				addLogLevelAttributeAndHint(log)
 
 				format := getFormatFromFormatHint(log.Attributes(), resource.Attributes())
-				mergedLabels := convertAttributesAndMerge(log.Attributes(), resource.Attributes())
+				if e.format != "" {
+					format = e.format
+				}
+				mergedLabels := e.convertAttributesAndMerge(log.Attributes(), resource.Attributes())
 				removeAttributes(log.Attributes(), mergedLabels)
 				removeAttributes(resource.Attributes(), mergedLabels)
 

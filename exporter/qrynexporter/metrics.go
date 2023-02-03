@@ -45,7 +45,7 @@ func newMetricsExporter(logger *zap.Logger, cfg *Config) (*metricsExporter, erro
 	return &metricsExporter{
 		logger:    logger,
 		db:        db,
-		namespace: cfg.Namespace,
+		namespace: cfg.Metrics.Namespace,
 	}, nil
 }
 

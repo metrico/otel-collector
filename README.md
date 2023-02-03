@@ -99,6 +99,8 @@ exporters:
       initial_interval: 5s
       max_interval: 30s
       max_elapsed_time: 300s
+    logs:
+       format: json
   otlp/spanmetrics:
     endpoint: localhost:4317
     tls:
