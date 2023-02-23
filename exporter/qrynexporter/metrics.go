@@ -197,6 +197,7 @@ func (e *metricsExporter) exportNumberDataPoints(dataPoints pmetric.NumberDataPo
 	}
 	return nil
 }
+
 func (e *metricsExporter) exportSummaryDataPoints(dataPoints pmetric.SummaryDataPointSlice,
 	resource pcommon.Resource, metric pmetric.Metric,
 	samples *[]Sample, timeSeries *[]TimeSerie,
@@ -368,6 +369,10 @@ func (e *metricsExporter) exportHistogramDataPoint(pt pmetric.HistogramDataPoint
 		boundStr := strconv.FormatFloat(bound, 'f', -1, 64)
 		cumulativeCount += pt.BucketCounts().At(i)
 		bucketLabels := buildLabelSet(resource, pt.Attributes(), model.MetricNameLabel, baseName+bucketSuffix, "le", boundStr)
+		labelsJSON, err := json.Marshal(bucketLabels)
+		if err != nil {
+			return fmt.Errorf("marshal label set error: %w", err)
+		}
 		fingerprint := bucketLabels.Fingerprint()
 		bucket := Sample{
 			Fingerprint: uint64(fingerprint),
@@ -454,7 +459,6 @@ func (e *metricsExporter) collectFromMetric(metric pmetric.Metric, resource pcom
 }
 
 func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metrics) error {
-
 	// for collect samples and timeSeries
 	var (
 		samples    []Sample
