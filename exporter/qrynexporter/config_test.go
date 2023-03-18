@@ -25,7 +25,6 @@ func TestLoadConfig(t *testing.T) {
 		id       component.ID
 		expected component.Config
 	}{
-
 		{
 			id:       component.NewIDWithName(typeStr, ""),
 			expected: defaultCfg,
@@ -38,10 +37,12 @@ func TestLoadConfig(t *testing.T) {
 					Timeout: 5 * time.Second,
 				},
 				RetrySettings: exporterhelper.RetrySettings{
-					Enabled:         true,
-					InitialInterval: 5 * time.Second,
-					MaxInterval:     30 * time.Second,
-					MaxElapsedTime:  300 * time.Second,
+					Enabled:             true,
+					InitialInterval:     5 * time.Second,
+					MaxInterval:         30 * time.Second,
+					MaxElapsedTime:      300 * time.Second,
+					RandomizationFactor: 0.5,
+					Multiplier:          1.5,
 				},
 				QueueSettings: QueueSettings{
 					QueueSize: 100,
