@@ -79,6 +79,7 @@ services:
         condition: service_healthy
   qryn:
     image: qxip/qryn:latest
+    platform: linux/amd64
     container_name: qryn
     restart: unless-stopped
     expose:
@@ -129,27 +130,13 @@ services:
         fluentd-sub-second-precision: 'true'
     stop_signal: SIGKILL
 
-  # Traces and metrics generator
-  demo-client:
-    build:
-      context: https://github.com/open-telemetry/opentelemetry-collector-contrib.git#:examples/demo/client
-    restart: always
+  # Generate fake traces...
+  k6-tracing:
+    image: ghcr.io/grafana/xk6-client-tracing:v0.0.2
     environment:
-      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
-      - DEMO_SERVER_ENDPOINT=http://demo-server:7080/hello
-    depends_on:
-      - demo-server
+      - ENDPOINT=host.docker.internal:4317
+    restart: always
     networks:
       - otel-collector
-  demo-server:
-    build:
-      context: https://github.com/open-telemetry/opentelemetry-collector-contrib.git#:examples/demo/server
-    restart: always
-    environment:
-      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
-    ports:
-      - "7080"
     depends_on:
-      - otel-collector
-    networks:
       - otel-collector
