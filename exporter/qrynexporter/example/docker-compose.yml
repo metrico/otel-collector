@@ -134,7 +134,7 @@ services:
   k6-tracing:
     image: ghcr.io/grafana/xk6-client-tracing:v0.0.2
     environment:
-      - ENDPOINT=host.docker.internal:4317
+      - ENDPOINT=otel-collector:4317
     restart: always
     networks:
       - otel-collector
