@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -253,10 +254,17 @@ func mapToKeyValueList(m pcommon.Map) []*commonv1.KeyValue {
 	return keyValues
 }
 
+func ensureUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	return fmt.Sprintf("invalid utf-8: %q", s)
+}
+
 func valueToOtlpAnyVaule(v pcommon.Value) *commonv1.AnyValue {
 	switch v.Type() {
 	case pcommon.ValueTypeStr:
-		return &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: v.Str()}}
+		return &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: ensureUTF8(v.Str())}}
 	case pcommon.ValueTypeBytes:
 		return &commonv1.AnyValue{Value: &commonv1.AnyValue_BytesValue{BytesValue: v.Bytes().AsRaw()}}
 	case pcommon.ValueTypeInt:
