@@ -16,20 +16,30 @@ package qrynexporter
 
 import (
 	"context"
-	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"time"
+	"unicode/utf8"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
-	conventions "go.opentelemetry.io/collector/model/semconv/v1.5.0"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
+	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	tracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
-var marshaler = &ptrace.JSONMarshaler{}
+const (
+	spanLinkDataFormat = "%s|%s|%s|%s|%d"
+)
+
+var delegate = &protojson.MarshalOptions{
+	// https://github.com/open-telemetry/opentelemetry-specification/pull/2758
+	UseEnumNumbers: true,
+}
 
 // tracesExporter for writing spans to ClickHouse
 type tracesExporter struct {
@@ -54,37 +64,16 @@ func newTracesExporter(logger *zap.Logger, cfg *Config) (*tracesExporter, error)
 	}, nil
 }
 
-func fixRawSpan(rawSpan string, span ptrace.Span) (string, error) {
-	var err error
-	traceID := span.TraceID()
-	if !traceID.IsEmpty() {
-		rawSpan, err = sjson.Set(rawSpan, "traceId", string(base64Encode(traceID[:])))
-		if err != nil {
-			return "", err
-		}
-	}
-	spanID := span.SpanID()
-	if !spanID.IsEmpty() {
-		rawSpan, err = sjson.Set(rawSpan, "spanId", string(base64Encode(spanID[:])))
-		if err != nil {
-			return "", err
-		}
-	}
-	parentSpanID := span.ParentSpanID()
-	if !parentSpanID.IsEmpty() {
-		rawSpan, err = sjson.Set(rawSpan, "parentSpanId", string(base64Encode(parentSpanID[:])))
-		if err != nil {
-			return "", err
-		}
-	}
-	return rawSpan, nil
-}
-
-func exportScopeSpans(serviceName string, rawScopeSapns string, ilss ptrace.ScopeSpansSlice, resource pcommon.Resource, batch driver.Batch) error {
+func (e *tracesExporter) exportScopeSpans(serviceName string,
+	ilss ptrace.ScopeSpansSlice,
+	resource pcommon.Resource,
+	batch driver.Batch,
+	tags map[string]string,
+) error {
 	for i := 0; i < ilss.Len(); i++ {
+		extractScopeTags(ilss.At(i).Scope(), tags)
 		spans := ilss.At(i).Spans()
-		rawSpans := gjson.Get(rawScopeSapns, fmt.Sprintf("%d.spans", i)).String()
-		err := exportSpans(serviceName, rawSpans, spans, resource, batch)
+		err := e.exportSpans(serviceName, spans, resource, batch, tags)
 		if err != nil {
 			return err
 		}
@@ -92,23 +81,77 @@ func exportScopeSpans(serviceName string, rawScopeSapns string, ilss ptrace.Scop
 	return nil
 }
 
-func exportSpans(serviceName string, rawSapns string, spans ptrace.SpanSlice, resource pcommon.Resource, batch driver.Batch) error {
-	for i := 0; i < spans.Len(); i++ {
-		span := spans.At(i)
-		rawSpan, err := fixRawSpan(gjson.Get(rawSapns, fmt.Sprintf("%d", i)).String(), span)
+func spanLinksToTags(links ptrace.SpanLinkSlice, tags map[string]string) error {
+	for i := 0; i < links.Len(); i++ {
+		link := links.At(i)
+		key := fmt.Sprintf("otlp.link.%d", i)
+		jsonStr, err := json.Marshal(link.Attributes().AsRaw())
 		if err != nil {
 			return err
 		}
-		tracesInput := convertTracesInput(span, serviceName, rawSpan)
+		tags[key] = fmt.Sprintf(spanLinkDataFormat,
+			link.TraceID().String(),
+			link.SpanID().String(),
+			link.TraceState().AsRaw(),
+			jsonStr,
+			link.DroppedAttributesCount())
+	}
+	return nil
+}
+
+func attributeMapToStringMap(attrMap pcommon.Map) map[string]string {
+	rawMap := make(map[string]string)
+	attrMap.Range(func(k string, v pcommon.Value) bool {
+		rawMap[k] = v.AsString()
+		return true
+	})
+	return rawMap
+}
+
+func aggregateSpanTags(span ptrace.Span, tt map[string]string) map[string]string {
+	tags := make(map[string]string)
+	for key, val := range tt {
+		tags[key] = val
+	}
+	spanTags := attributeMapToStringMap(span.Attributes())
+	for key, val := range spanTags {
+		tags[key] = val
+	}
+	return tags
+}
+
+func (e *tracesExporter) exportSpans(
+	localServiceName string,
+	spans ptrace.SpanSlice,
+	resource pcommon.Resource,
+	batch driver.Batch,
+	tags map[string]string,
+) error {
+	for i := 0; i < spans.Len(); i++ {
+		span := spans.At(i)
+		spanLinksToTags(span.Links(), tags)
+		tracesInput, err := convertTracesInput(span, resource, localServiceName, tags)
+		if err != nil {
+			e.logger.Error("convertTracesInput", zap.Error(err))
+			continue
+		}
 		if err := batch.AppendStruct(tracesInput); err != nil {
 			return err
 		}
 	}
 	return nil
-
 }
 
-func (e *tracesExporter) exportResourceSapns(ctx context.Context, rawTraces string, resourceSpans ptrace.ResourceSpansSlice) error {
+func extractScopeTags(il pcommon.InstrumentationScope, tags map[string]string) {
+	if ilName := il.Name(); ilName != "" {
+		tags[conventions.OtelLibraryName] = ilName
+	}
+	if ilVer := il.Version(); ilVer != "" {
+		tags[conventions.OtelLibraryVersion] = ilVer
+	}
+}
+
+func (e *tracesExporter) exportResourceSapns(ctx context.Context, resourceSpans ptrace.ResourceSpansSlice) error {
 	batch, err := e.db.PrepareBatch(ctx, tracesInputSQL)
 	if err != nil {
 		return err
@@ -117,30 +160,29 @@ func (e *tracesExporter) exportResourceSapns(ctx context.Context, rawTraces stri
 	for i := 0; i < resourceSpans.Len(); i++ {
 		rs := resourceSpans.At(i)
 		resource := rs.Resource()
-		serviceName := serviceNameForResource(resource)
+		localServiceName, tags := resourceToServiceNameAndAttributeMap(resource)
 		ilss := rs.ScopeSpans()
-		rawScopeSpans := gjson.Get(rawTraces, fmt.Sprintf("resourceSpans.%d.scopeSpans", i)).String()
-		if err := exportScopeSpans(serviceName, rawScopeSpans, ilss, resource, batch); err != nil {
+		if err := e.exportScopeSpans(localServiceName, ilss, resource, batch, tags); err != nil {
 			batch.Abort()
 			return err
 		}
 	}
-	return batch.Send()
+
+	if err := batch.Send(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // traceDataPusher implements OTEL exporterhelper.traceDataPusher
 func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) error {
-	mergeAttributes(&td)
-	rawTraces, err := marshaler.MarshalTraces(td)
-	if err != nil {
+	start := time.Now()
+	if err := e.exportResourceSapns(ctx, td.ResourceSpans()); err != nil {
 		return err
 	}
-
-	if err := e.exportResourceSapns(ctx, string(rawTraces), td.ResourceSpans()); err != nil {
-		return err
-	}
+	e.logger.Info("pushTraceData", zap.Int("spanCount", td.SpanCount()), zap.String("cost", time.Since(start).String()))
 	return nil
-
 }
 
 // Shutdown will shutdown the exporter.
@@ -150,18 +192,13 @@ func (e *tracesExporter) Shutdown(_ context.Context) error {
 	}
 	return nil
 }
-func base64Encode(input []byte) []byte {
-	eb := make([]byte, base64.StdEncoding.EncodedLen(len(input)))
-	base64.StdEncoding.Encode(eb, input)
-	return eb
-}
 
-// serviceNameForResource gets the service name for a specified Resource.
-func serviceNameForResource(resource pcommon.Resource) string {
+// resourceToServiceNameAndAttributeMap gets the service name for a specified Resource.
+func resourceToServiceNameAndAttributeMap(resource pcommon.Resource) (string, map[string]string) {
 	tags := make(map[string]string)
 	attrs := resource.Attributes()
 	if attrs.Len() == 0 {
-		return "OTLPResourceNoServiceName"
+		return "OTLPResourceNoServiceName", tags
 	}
 
 	attrs.Range(func(k string, v pcommon.Value) bool {
@@ -169,8 +206,9 @@ func serviceNameForResource(resource pcommon.Resource) string {
 		return true
 	})
 
-	return extractServiceName(tags)
+	serviceName := extractServiceName(tags)
 
+	return serviceName, tags
 }
 
 func extractServiceName(tags map[string]string) string {
@@ -189,47 +227,149 @@ func extractServiceName(tags map[string]string) string {
 	return serviceName
 }
 
-func convertTracesInput(otelSpan ptrace.Span, serviceName string, payload string) *Trace {
-	durationNano := uint64(otelSpan.EndTimestamp() - otelSpan.StartTimestamp())
-	attributes := otelSpan.Attributes()
-
-	tags := make([][]string, 0)
-	tags = append(tags, []string{"name", otelSpan.Name()})
-	tags = append(tags, []string{"service.name", serviceName})
-
-	attributes.Range(func(k string, v pcommon.Value) bool {
-		tags = append(tags, []string{k, v.AsString()})
+func mergeAttributes(span ptrace.Span, resource pcommon.Resource) {
+	resource.Attributes().Range(func(k string, v pcommon.Value) bool {
+		span.Attributes().PutStr(k, v.AsString())
 		return true
 	})
+}
+
+func sliceToArray(vs pcommon.Slice) []*commonv1.AnyValue {
+	var anyValues []*commonv1.AnyValue
+	for i := 0; i < vs.Len(); i++ {
+		anyValues = append(anyValues, valueToOtlpAnyVaule(vs.At(i)))
+	}
+	return anyValues
+}
+
+func mapToKeyValueList(m pcommon.Map) []*commonv1.KeyValue {
+	var keyValues []*commonv1.KeyValue
+	m.Range(func(k string, v pcommon.Value) bool {
+		keyValues = append(keyValues, &commonv1.KeyValue{
+			Key:   k,
+			Value: valueToOtlpAnyVaule(v),
+		})
+		return true
+	})
+	return keyValues
+}
+
+func ensureUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	return fmt.Sprintf("invalid utf-8: %q", s)
+}
+
+func valueToOtlpAnyVaule(v pcommon.Value) *commonv1.AnyValue {
+	switch v.Type() {
+	case pcommon.ValueTypeStr:
+		return &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: ensureUTF8(v.Str())}}
+	case pcommon.ValueTypeBytes:
+		return &commonv1.AnyValue{Value: &commonv1.AnyValue_BytesValue{BytesValue: v.Bytes().AsRaw()}}
+	case pcommon.ValueTypeInt:
+		return &commonv1.AnyValue{Value: &commonv1.AnyValue_IntValue{IntValue: v.Int()}}
+	case pcommon.ValueTypeDouble:
+		return &commonv1.AnyValue{Value: &commonv1.AnyValue_DoubleValue{DoubleValue: v.Double()}}
+	case pcommon.ValueTypeBool:
+		return &commonv1.AnyValue{Value: &commonv1.AnyValue_BoolValue{BoolValue: v.Bool()}}
+	case pcommon.ValueTypeSlice:
+		return &commonv1.AnyValue{Value: &commonv1.AnyValue_ArrayValue{ArrayValue: &commonv1.ArrayValue{Values: sliceToArray(v.Slice())}}}
+	case pcommon.ValueTypeMap:
+		return &commonv1.AnyValue{Value: &commonv1.AnyValue_KvlistValue{KvlistValue: &commonv1.KeyValueList{Values: mapToKeyValueList(v.Map())}}}
+	default:
+		return nil
+	}
+}
+
+func spanLinkSlickToSpanLinks(spanLinks ptrace.SpanLinkSlice) []*tracev1.Span_Link {
+	links := make([]*tracev1.Span_Link, 0, spanLinks.Len())
+	for i := 0; i < spanLinks.Len(); i++ {
+		link := spanLinks.At(i)
+		traceID := link.TraceID()
+		spanID := link.SpanID()
+		links = append(links, &tracev1.Span_Link{
+			TraceId:                traceID[:],
+			SpanId:                 spanID[:],
+			TraceState:             link.TraceState().AsRaw(),
+			DroppedAttributesCount: link.DroppedAttributesCount(),
+			Attributes:             mapToKeyValueList(link.Attributes()),
+		})
+	}
+	return links
+}
+
+func spanEventSliceToSpanEvents(spanEvents ptrace.SpanEventSlice) []*tracev1.Span_Event {
+	events := make([]*tracev1.Span_Event, 0, spanEvents.Len())
+	for i := 0; i < spanEvents.Len(); i++ {
+		event := spanEvents.At(i)
+		events = append(events, &tracev1.Span_Event{
+			TimeUnixNano:           uint64(event.Timestamp()),
+			Name:                   event.Name(),
+			DroppedAttributesCount: event.DroppedAttributesCount(),
+			Attributes:             mapToKeyValueList(event.Attributes()),
+		})
+	}
+	return events
+}
+
+func marshalSpanToJSON(span ptrace.Span) ([]byte, error) {
+	traceID := span.TraceID()
+	spanID := span.SpanID()
+	parentSpanID := span.ParentSpanID()
+	otlpSpan := &tracev1.Span{
+		TraceId:                traceID[:],
+		SpanId:                 spanID[:],
+		TraceState:             span.TraceState().AsRaw(),
+		ParentSpanId:           parentSpanID[:],
+		Name:                   span.Name(),
+		Kind:                   tracev1.Span_SpanKind(span.Kind()),
+		StartTimeUnixNano:      uint64(span.StartTimestamp()),
+		EndTimeUnixNano:        uint64(span.EndTimestamp()),
+		Attributes:             mapToKeyValueList(span.Attributes()),
+		DroppedAttributesCount: span.DroppedAttributesCount(),
+		Events:                 spanEventSliceToSpanEvents(span.Events()),
+		DroppedEventsCount:     span.DroppedEventsCount(),
+		Links:                  spanLinkSlickToSpanLinks(span.Links()),
+		DroppedLinksCount:      span.DroppedLinksCount(),
+		Status: &tracev1.Status{
+			Code:    tracev1.Status_StatusCode(span.Status().Code()),
+			Message: span.Status().Message(),
+		},
+	}
+	return delegate.Marshal(otlpSpan)
+}
+
+func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName string, tags map[string]string) (*Trace, error) {
+	mergeAttributes(span, resource)
+	durationNano := uint64(span.EndTimestamp() - span.StartTimestamp())
+	tags = aggregateSpanTags(span, tags)
+	tags["service.name"] = serviceName
+	tags["name"] = span.Name()
+	tags["otel.status_code"] = span.Status().Code().String()
+	tags["otel.status_description"] = span.Status().Message()
+
+	mTags := make([][]string, 0, len(tags))
+	for k, v := range tags {
+		mTags = append(mTags, []string{k, v})
+	}
+	payload, err := marshalSpanToJSON(span)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal span: %w", err)
+	}
 
 	trace := &Trace{
-		TraceID:     otelSpan.TraceID().String(),
-		SpanID:      otelSpan.SpanID().String(),
-		ParentID:    otelSpan.ParentSpanID().String(),
-		Name:        otelSpan.Name(),
-		TimestampNs: int64(otelSpan.StartTimestamp()),
+		TraceID:     span.TraceID().String(),
+		SpanID:      span.SpanID().String(),
+		ParentID:    span.ParentSpanID().String(),
+		Name:        span.Name(),
+		TimestampNs: int64(span.StartTimestamp()),
 		DurationNs:  int64(durationNano),
 		ServiceName: serviceName,
 		PayloadType: 2,
-		Tags:        tags,
-		Payload:     payload,
+		Tags:        mTags,
+		Payload:     string(payload),
 	}
 
-	return trace
-}
-
-func mergeAttributes(td *ptrace.Traces) {
-	rss := td.ResourceSpans()
-	for i := 0; i < rss.Len(); i++ {
-		rs := rss.At(i)
-		ilss := rs.ScopeSpans()
-		for j := 0; j < ilss.Len(); j++ {
-			ils := ilss.At(j)
-			spans := ils.Spans()
-			for k := 0; k < spans.Len(); k++ {
-				span := spans.At(k)
-				rs.Resource().Attributes().CopyTo(span.Attributes())
-			}
-		}
-	}
+	return trace, nil
 }
