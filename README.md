@@ -10,7 +10,7 @@ The **qryn-otel-collector** is designed to store OpenTelemetry data _(Traces, Lo
 
 
 ### Usage
-```
+```yaml
 otel-collector:
     container_name: otel-collector
     image: ghcr.io/metrico/qryn-otel-collector:latest
@@ -28,8 +28,10 @@ otel-collector:
     restart: on-failure
 ```
 
-### Config
-```
+### Config Template
+The following template enables popular log, metric and tracing ingestion formats supported by qryn
+
+```yaml
 receivers:
   loki:
     use_incoming_timestamp: true
