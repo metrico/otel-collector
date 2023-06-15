@@ -8,6 +8,25 @@ Open Telemetry distribution for [qryn](https://qryn.dev)
 ### About
 The **qryn-otel-collector** is designed to store OpenTelemetry data _(Traces, Logs, Metrics)_ in [ClickHouse](https://github.com/clickhouse/clicklhouse) using [qryn](https://github.com/metrico/qryn) _fingerprinting and table formats_ transparently accessed and comsumed through any of the [qryn API integrations](https://qryn.dev) such as _LogQL, PromQL and Tempo_ in Grafana.
 
+#### Popular ingestion formats _(out of many more)_:
+
+- Logs
+  - [Loki](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/lokireceiver)
+  - [Splunk](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/splunkhecreceiver)
+  - [Fluentd](github.com/open-telemetry/opentelemetry-collector-contrib/receiver/fluentforwardreceiver)
+  - [Cloudwatch](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver)
+  - [Syslog](github.com/open-telemetry/opentelemetry-collector-contrib/receiver/syslogreceiver)
+- Metrics
+  - [Prometheus](github.com/open-telemetry/opentelemetry-collector-contrib/receiver/prometheusreceiver)
+  - [InfluxDB](github.com/open-telemetry/opentelemetry-collector-contrib/receiver/influxdbreceiver)
+  - OTLP
+- Traces
+  - [Zipkin](github.com/open-telemetry/opentelemetry-collector-contrib/receiver/zipkinreceiver)
+  - [Jaeger](github.com/open-telemetry/opentelemetry-collector-contrib/receiver/jaegerreceiver)
+  - [Skywalking](github.com/open-telemetry/opentelemetry-collector-contrib/receiver/skywalkingreceiver)
+  - OTLP
+
+
 
 ### Usage
 ```yaml
@@ -19,12 +38,17 @@ otel-collector:
     ports:
       - "4317:4317"     # OTLP gRPC receiver
       - "4318:4318"     # OTLP HTTP receiver
-      - "14250:14250"   # Jaeger gRPC
-      - "14268:14268"   # Jaeger thrift HTTP
-      - "9411:9411"     # Zipkin port
-      - "24224:24224".  # Fluent Forward
-      - "3100:3100".    # Loki/Logql HTTP
-      - "3200:3200".    # Loki/Logql gRPC
+      - "14250:14250"   # Jaeger gRPC receiver
+      - "14268:14268"   # Jaeger thrift HTTP receiver
+      - "9411:9411"     # Zipkin Trace receiver
+      - "11800:11800"   # Skywalking gRPC receiver
+      - "12800:12800"   # Skywalking HTTP receiver
+      - "24224:24224".  # Fluent Forward receiver
+      - "8086:8086"     # InfluxDB Line proto HTTP
+      - "3100:3100".    # Loki/Logql HTTP receiver
+      - "3200:3200".    # Loki/Logql gRPC receiver
+      - "8088:8088"     # Splunk HEC receiver
+      - "5514:5514"     # Syslog TCP Rereceiverceiver
     restart: on-failure
 ```
 
@@ -40,6 +64,15 @@ receivers:
         endpoint: 0.0.0.0:3100
       grpc:
         endpoint: 0.0.0.0:3200
+  syslog:
+    protocol: rfc5424
+    tcp:
+      listen_address: "0.0.0.0:5514"
+    protocol: rfc5424
+  fluentforward:
+    endpoint: 0.0.0.0:24224
+  splunk_hec:
+    endpoint: 0.0.0.0:8088
   otlp:
     protocols:
       grpc:
@@ -54,8 +87,12 @@ receivers:
         endpoint: 0.0.0.0:14268
   zipkin:
     endpoint: 0.0.0.0:9411
-  fluentforward:
-    endpoint: 0.0.0.0:24224
+  skywalking:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:11800
+      http:
+        endpoint: 0.0.0.0:12800
   prometheus:
     config:
       scrape_configs:
@@ -63,6 +100,9 @@ receivers:
           scrape_interval: 5s
           static_configs:
             - targets: ['exporter:8080']
+  influxdb:
+    endpoint: 0.0.0.0:8086
+    
 processors:
   batch:
     send_batch_size: 10000
@@ -131,7 +171,7 @@ service:
       processors: [memory_limiter, resourcedetection/system, resource, batch]
       exporters: [qryn]
     traces:
-      receivers: [otlp, jaeger, zipkin]
+      receivers: [otlp, jaeger, zipkin, skywalking]
       processors: [memory_limiter, resourcedetection/system, resource, spanmetrics, servicegraph, batch]
       exporters: [qryn]
     metrics/spanmetrics:
@@ -139,7 +179,7 @@ service:
       processors: [metricstransform]
       exporters: [qryn]
     metrics:
-      receivers: [prometheus]
+      receivers: [prometheus, influxdb]
       processors: [memory_limiter, resourcedetection/system, resource, batch]
       exporters: [qryn]
 ```
