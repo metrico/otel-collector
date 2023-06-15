@@ -6,7 +6,7 @@ Open Telemetry distribution for [qryn](https://qryn.dev)
 
 
 ### About
-The **qryn-otel-collector** is designed to store OpenTelemetry data _(Traces, Logs, Metrics)_ in [ClickHouse](https://github.com/clickhouse/clicklhouse) using [qryn](https://github.com/metrico/qryn) _fingerprinting and table formats_ transparently accessed and comsumed through any of the [qryn API integrations](https://qryn.dev) such as _LogQL, PromQL and Tempo_ in Grafana.
+The **qryn-otel-collector** is designed to store observability data _(Traces, Logs, Metrics)_ from multiple vendors/platforms into [ClickHouse](https://github.com/clickhouse/clicklhouse) using [qryn](https://github.com/metrico/qryn) _fingerprinting and table formats_ transparently accessible through [qryn](https://qryn.dev) via _LogQL, PromQL and Tempo queries_.
 
 #### Popular ingestion formats _(out of many more)_:
 
@@ -36,6 +36,11 @@ otel-collector:
     volumes:
       - ./otel-collector-config.yaml:/etc/otel/config.yaml
     ports:
+      - "3100:3100".    # Loki/Logql HTTP receiver
+      - "3200:3200".    # Loki/Logql gRPC receiver
+      - "8088:8088"     # Splunk HEC receiver
+      - "5514:5514"     # Syslog TCP Rereceiverceiver
+      - "24224:24224".  # Fluent Forward receiver
       - "4317:4317"     # OTLP gRPC receiver
       - "4318:4318"     # OTLP HTTP receiver
       - "14250:14250"   # Jaeger gRPC receiver
@@ -43,12 +48,9 @@ otel-collector:
       - "9411:9411"     # Zipkin Trace receiver
       - "11800:11800"   # Skywalking gRPC receiver
       - "12800:12800"   # Skywalking HTTP receiver
-      - "24224:24224".  # Fluent Forward receiver
+      
       - "8086:8086"     # InfluxDB Line proto HTTP
-      - "3100:3100".    # Loki/Logql HTTP receiver
-      - "3200:3200".    # Loki/Logql gRPC receiver
-      - "8088:8088"     # Splunk HEC receiver
-      - "5514:5514"     # Syslog TCP Rereceiverceiver
+
     restart: on-failure
 ```
 
