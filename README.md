@@ -8,6 +8,9 @@ Open Telemetry distribution for [qryn](https://qryn.dev)
 ### About
 The **qryn-otel-collector** is designed to store observability data _(Traces, Logs, Metrics)_ from multiple vendors/platforms into [ClickHouse](https://github.com/clickhouse/clicklhouse) using [qryn](https://github.com/metrico/qryn) _fingerprinting and table formats_ transparently accessible through [qryn](https://qryn.dev) via _LogQL, PromQL and Tempo queries_.
 
+<img src="https://github.com/metrico/otel-collector/assets/1423657/067147bd-38f7-44d5-925c-32a0cf1b1f94" height=150>
+
+
 #### Popular ingestion formats _(out of many more)_:
 
 - Logs
