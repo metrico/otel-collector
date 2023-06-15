@@ -23,12 +23,21 @@ otel-collector:
       - "14268:14268"   # Jaeger thrift HTTP
       - "9411:9411"     # Zipkin port
       - "24224:24224".  # Fluent Forward
+      - "3100:3100".    # Loki/Logql HTTP
+      - "3200:3200".    # Loki/Logql gRPC
     restart: on-failure
 ```
 
 ### Config
 ```
 receivers:
+  loki:
+    use_incoming_timestamp: true
+    protocols:
+      http:
+        endpoint: 0.0.0.0:3100
+      grpc:
+        endpoint: 0.0.0.0:3200
   otlp:
     protocols:
       grpc:
@@ -116,14 +125,13 @@ service:
   extensions: [pprof, zpages, health_check]
   pipelines:
     logs:
-      receivers: [fluentforward, otlp]
+      receivers: [fluentforward, otlp, loki]
       processors: [memory_limiter, resourcedetection/system, resource, batch]
       exporters: [qryn]
     traces:
       receivers: [otlp, jaeger, zipkin]
       processors: [memory_limiter, resourcedetection/system, resource, spanmetrics, servicegraph, batch]
       exporters: [qryn]
-    # for align with https://grafana.com/docs/tempo/latest/metrics-generator/span_metrics/#how-to-run
     metrics/spanmetrics:
       receivers: [otlp]
       processors: [metricstransform]
