@@ -155,7 +155,7 @@ exporters:
       max_interval: 30s
       max_elapsed_time: 300s
     logs:
-       format: json
+       format: raw
   otlp/spanmetrics:
     endpoint: localhost:4317
     tls:
