@@ -73,7 +73,6 @@ receivers:
     protocol: rfc5424
     tcp:
       listen_address: "0.0.0.0:5514"
-    protocol: rfc5424
   fluentforward:
     endpoint: 0.0.0.0:24224
   splunk_hec:
