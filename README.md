@@ -39,11 +39,11 @@ otel-collector:
     volumes:
       - ./otel-collector-config.yaml:/etc/otel/config.yaml
     ports:
-      - "3100:3100".    # Loki/Logql HTTP receiver
-      - "3200:3200".    # Loki/Logql gRPC receiver
+      - "3100:3100"     # Loki/Logql HTTP receiver
+      - "3200:3200"     # Loki/Logql gRPC receiver
       - "8088:8088"     # Splunk HEC receiver
       - "5514:5514"     # Syslog TCP Rereceiverceiver
-      - "24224:24224".  # Fluent Forward receiver
+      - "24224:24224"   # Fluent Forward receiver
       - "4317:4317"     # OTLP gRPC receiver
       - "4318:4318"     # OTLP HTTP receiver
       - "14250:14250"   # Jaeger gRPC receiver
