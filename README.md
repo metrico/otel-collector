@@ -187,3 +187,41 @@ service:
       processors: [memory_limiter, resourcedetection/system, resource, batch]
       exporters: [qryn]
 ```
+
+
+
+### Kafka Receiver
+
+In order to correctly set labels when using Kafka _(or other generic receiver)_ you will have to elect fields as labels.
+
+For example this processor copies `severity` json field to the `severity` label:
+```
+processors:
+  logstransform:
+    operators:
+      - type: copy
+        from: 'body.severity'
+        to: 'attributes.severity'
+```
+
+Use the label processor inside the pipeline you want:
+
+```
+  pipelines:
+    logs:
+      receivers: [kafka]
+      processors: [logstransform, memory_limiter, batch]
+      exporters: [qryn]
+```
+
+#### Kafka Example
+
+A stream containing `{"severity":"info", "data": "a"}` should produce the following fingerprint and log:
+```
+┌───────date─┬──────────fingerprint─┬─labels──────────────┬─name─┐
+│ 2023-10-05 │ 11473756280579456548 │ {"severity":"info"} │      │
+└────────────┴──────────────────────┴─────────────────────┴──────┘
+
+┌──────────fingerprint─┬────────timestamp_ns─┬─value─┬─string─────────────────────────┐
+│ 11473756280579456548 │ 1696502612955383384 │     0 │ {"data":"a","severity":"info"} │
+└──────────────────────┴─────────────────────┴───────┴────────────────────────────────┘
