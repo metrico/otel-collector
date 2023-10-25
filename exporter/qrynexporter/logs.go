@@ -36,6 +36,7 @@ type logsExporter struct {
 	attritubeLabels string
 	resourceLabels  string
 	format          string
+	cluster         bool
 }
 
 func newLogsExporter(logger *zap.Logger, cfg *Config) (*logsExporter, error) {
@@ -53,6 +54,7 @@ func newLogsExporter(logger *zap.Logger, cfg *Config) (*logsExporter, error) {
 		format:          cfg.Logs.Format,
 		attritubeLabels: cfg.Logs.AttritubeLabels,
 		resourceLabels:  cfg.Logs.ResourceLabels,
+		cluster:         cfg.ClusteredClickhouse,
 	}, nil
 }
 
@@ -428,11 +430,12 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 		}
 	}
 
-	return batchSamplesAndTimeSeries(ctx, e.db, samples, timeSeries)
+	return batchSamplesAndTimeSeries(context.WithValue(ctx, "cluster", e.cluster), e.db, samples, timeSeries)
 }
 
 func batchSamplesAndTimeSeries(ctx context.Context, db clickhouse.Conn, samples []Sample, timeSeries []TimeSerie) error {
-	samplesBatch, err := db.PrepareBatch(ctx, samplesSQL)
+	isCluster := ctx.Value("cluster").(bool)
+	samplesBatch, err := db.PrepareBatch(ctx, samplesSQL(isCluster))
 	if err != nil {
 		return err
 	}
@@ -445,7 +448,7 @@ func batchSamplesAndTimeSeries(ctx context.Context, db clickhouse.Conn, samples 
 		return err
 	}
 
-	timeSeriesBatch, err := db.PrepareBatch(ctx, TimeSerieSQL)
+	timeSeriesBatch, err := db.PrepareBatch(ctx, TimeSerieSQL(isCluster))
 	if err != nil {
 		return err
 	}

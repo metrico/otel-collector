@@ -15,11 +15,13 @@
 package qrynexporter
 
 import (
+	"fmt"
 	"time"
 )
 
-const (
-	tracesInputSQL = `INSERT INTO traces_input (
+var (
+	tracesInputSQL = func(clustered bool) string {
+		return `INSERT INTO traces_input (
   trace_id, 
   span_id, 
   parent_id, 
@@ -30,16 +32,29 @@ const (
   payload_type, 
   payload, 
   tags)`
-	samplesSQL = `INSERT INTO samples_v3 (
+	}
+	samplesSQL = func(clustered bool) string {
+		dist := ""
+		if clustered {
+			dist = "_dist"
+		}
+		return fmt.Sprintf(`INSERT INTO samples_v3%s (
   fingerprint,
   timestamp_ns,
   value, 
-  string)`
-	TimeSerieSQL = `INSERT INTO time_series (
+  string)`, dist)
+	}
+	TimeSerieSQL = func(clustered bool) string {
+		dist := ""
+		if clustered {
+			dist = "_dist"
+		}
+		return fmt.Sprintf(`INSERT INTO time_series%s (
   date, 
   fingerprint,
   labels,
-  name)`
+  name)`, dist)
+	}
 )
 
 // Note: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
