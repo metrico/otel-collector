@@ -45,7 +45,8 @@ var delegate = &protojson.MarshalOptions{
 type tracesExporter struct {
 	logger *zap.Logger
 
-	db clickhouse.Conn
+	db      clickhouse.Conn
+	cluster bool
 }
 
 // newTracesExporter returns a SpanWriter for the database
@@ -59,8 +60,9 @@ func newTracesExporter(logger *zap.Logger, cfg *Config) (*tracesExporter, error)
 		return nil, err
 	}
 	return &tracesExporter{
-		logger: logger,
-		db:     db,
+		logger:  logger,
+		db:      db,
+		cluster: cfg.ClusteredClickhouse,
 	}, nil
 }
 
@@ -152,7 +154,8 @@ func extractScopeTags(il pcommon.InstrumentationScope, tags map[string]string) {
 }
 
 func (e *tracesExporter) exportResourceSapns(ctx context.Context, resourceSpans ptrace.ResourceSpansSlice) error {
-	batch, err := e.db.PrepareBatch(ctx, tracesInputSQL)
+	isCluster := ctx.Value("cluster").(bool)
+	batch, err := e.db.PrepareBatch(ctx, tracesInputSQL(isCluster))
 	if err != nil {
 		return err
 	}
@@ -177,8 +180,9 @@ func (e *tracesExporter) exportResourceSapns(ctx context.Context, resourceSpans 
 
 // traceDataPusher implements OTEL exporterhelper.traceDataPusher
 func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) error {
+	_ctx := context.WithValue(ctx, "cluster", e.cluster)
 	start := time.Now()
-	if err := e.exportResourceSapns(ctx, td.ResourceSpans()); err != nil {
+	if err := e.exportResourceSapns(_ctx, td.ResourceSpans()); err != nil {
 		return err
 	}
 	e.logger.Info("pushTraceData", zap.Int("spanCount", td.SpanCount()), zap.String("cost", time.Since(start).String()))

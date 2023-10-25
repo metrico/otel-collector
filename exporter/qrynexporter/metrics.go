@@ -31,6 +31,7 @@ type metricsExporter struct {
 	db clickhouse.Conn
 
 	namespace string
+	cluster   bool
 }
 
 func newMetricsExporter(logger *zap.Logger, cfg *Config) (*metricsExporter, error) {
@@ -46,6 +47,7 @@ func newMetricsExporter(logger *zap.Logger, cfg *Config) (*metricsExporter, erro
 		logger:    logger,
 		db:        db,
 		namespace: cfg.Metrics.Namespace,
+		cluster:   cfg.ClusteredClickhouse,
 	}, nil
 }
 
@@ -477,7 +479,7 @@ func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metric
 		}
 	}
 
-	return batchSamplesAndTimeSeries(ctx, e.db, samples, timeSeries)
+	return batchSamplesAndTimeSeries(context.WithValue(ctx, "cluster", e.cluster), e.db, samples, timeSeries)
 }
 
 // isValidAggregationTemporality checks whether an OTel metric has a valid

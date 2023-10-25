@@ -10,6 +10,7 @@
 # Configuration options:
 
 - `dsn` (required): Clickhouse's dsn.
+- `clustered_clickhouse` (required): true if clickhouse cluster is used
 
 # Example:
 ## Simple Trace Data
@@ -21,6 +22,7 @@ receivers:
 exporters:
   qryn:
     dsn: tcp://localhost:9000/?database=cloki
+    clustered_clickhouse: false
 
 service:
   pipelines:
