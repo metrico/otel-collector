@@ -1,7 +1,6 @@
 receivers:
   fluentforward:
     endpoint: 0.0.0.0:24224
-  prometheus:
   otlp:
     protocols:
       grpc:
@@ -10,7 +9,6 @@ receivers:
     protocols:
       grpc:
         endpoint: 'localhost:12345'
-
 processors:
   batch:
     send_batch_size: 1000
@@ -66,14 +64,12 @@ exporters:
     endpoint: localhost:4317
     tls:
       insecure: true
-
 extensions:
   health_check:
   pprof:
   zpages:
   memory_ballast:
     size_mib: 1000
-
 service:
   extensions: [pprof, zpages, health_check]
   pipelines:
@@ -97,4 +93,3 @@ service:
       processors:
         [memory_limiter, resourcedetection/system, metricstransform, batch]
       exporters: [qryn]
-
