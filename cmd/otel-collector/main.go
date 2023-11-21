@@ -9,12 +9,6 @@ import (
 )
 
 func main() {
-
-	factories, err := components()
-	if err != nil {
-		log.Fatalf("failed to build default components: %v", err)
-	}
-
 	info := component.BuildInfo{
 		Command:     "otel-collector",
 		Description: "qryn OTEL Collector",
@@ -22,7 +16,7 @@ func main() {
 	}
 
 	params := otelcol.CollectorSettings{
-		Factories: factories,
+		Factories: components,
 		BuildInfo: info,
 	}
 
