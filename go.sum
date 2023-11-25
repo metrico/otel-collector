@@ -1035,6 +1035,7 @@ github.com/open-telemetry/opentelemetry-collector-contrib/pkg/experimentalmetric
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl v0.87.0 h1:jtdLqdRyt29EUd6H6p431/XmGHwS6BHB5s/EqCfEWoc=
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/ottl v0.87.0/go.mod h1:JUVS9CCWJyXSJn8cTmS2Dq3vC3jlhJozjg3SZdZ/4OY=
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest v0.87.0 h1:9RtkoPmUPRW1NrOawEiWsxOZ/dBlym5DzhLXjRpM9tM=
+github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest v0.87.0/go.mod h1:xvO0/6zTw6UBl7g4hZpvapfvANNSnj6sQcSnF6jqSSg=
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.87.0 h1:zA50pvJziZjWQiN9MZIkT6Ii3hMSaCKa6jvs1vCYT5g=
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.87.0/go.mod h1:IjdtiiTTNlAkspcNyAjHysWAZs5U48alWGUodTkkxhI=
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/resourcetotelemetry v0.87.0 h1:JFPnEdsGaGhay69k7QJJuT7gq3XQn8fzYL1gm4Oqpj0=

@@ -9,6 +9,7 @@ receivers:
     protocols:
       grpc:
         endpoint: 'localhost:12345'
+  pyroscopereceiver:
 processors:
   batch:
     send_batch_size: 1000
@@ -71,10 +72,13 @@ extensions:
   memory_ballast:
     size_mib: 1000
 service:
+  # telemetry:
+  #   logs:
+  #     level: "debug"
   extensions: [pprof, zpages, health_check]
   pipelines:
     logs:
-      receivers: [fluentforward, otlp]
+      receivers: [fluentforward, otlp, pyroscopereceiver]
       processors: [memory_limiter, resourcedetection/system, batch]
       exporters: [qryn]
     traces:
