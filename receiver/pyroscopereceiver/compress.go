@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	expectedDataSizeBytes = 15e3
+	expectedDataSizeBytes = 16e3
 )
 
 type decompressor struct {

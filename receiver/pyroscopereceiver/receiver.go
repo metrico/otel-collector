@@ -24,6 +24,7 @@ import (
 const (
 	ingestPath = "/ingest"
 	nameLabel  = "__name__"
+	jfrFormat  = "jfr"
 )
 
 type pyroscopeReceiver struct {
@@ -91,23 +92,24 @@ func (d *pyroscopeReceiver) openMultipartJfr(unparsed *http.Request) (multipart.
 	if err := unparsed.ParseMultipartForm(d.conf.Protocols.Http.MaxRequestBodySize); err != nil {
 		return nil, fmt.Errorf("failed to parse multipart request: %w", err)
 	}
+	multipartForm := unparsed.MultipartForm
+	defer func() {
+		_ = multipartForm.RemoveAll()
+	}()
 
-	part, ok := unparsed.MultipartForm.File["jfr"]
+	part, ok := multipartForm.File[jfrFormat]
 	if !ok {
 		return nil, fmt.Errorf("required jfr part is missing")
 	}
-	if len(part) != 1 {
-		return nil, fmt.Errorf("invalid jfr part")
+	fh := part[0]
+	if fh.Filename != jfrFormat {
+		return nil, fmt.Errorf("jfr filename is not '%s'", jfrFormat)
 	}
-	jfr := part[0]
-	if jfr.Filename != "jfr" {
-		return nil, fmt.Errorf("invalid jfr part file")
-	}
-	file, err := jfr.Open()
+	f, err := fh.Open()
 	if err != nil {
 		return nil, fmt.Errorf("failed to open jfr file")
 	}
-	return file, nil
+	return f, nil
 }
 
 func resetHeaders(req *http.Request) {
@@ -188,6 +190,7 @@ func (recv *pyroscopeReceiver) Start(_ context.Context, host component.Host) err
 	recv.host = host
 	var err error
 
+	// applies an interceptor that enforces the configured request body limit
 	// TODO: rm redundant interceptors applied by ToServer() like decompressor
 	if recv.httpServer, err = recv.conf.Protocols.Http.ToServer(host, recv.settings.TelemetrySettings, recv.httpMux); err != nil {
 		return fmt.Errorf("failed to create http server: %w", err)
