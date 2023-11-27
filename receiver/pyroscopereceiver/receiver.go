@@ -82,6 +82,8 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
 	}
 	resetHeaders(req)
 
+	// parse jfr
+
 	// TODO: avoid realloc of []byte in buf.Bytes()
 	rec.Body().SetEmptyBytes().FromRaw(buf.Bytes())
 
@@ -128,14 +130,14 @@ func setAttrs(params *url.Values, rec *plog.LogRecord) error {
 		paramsv = *params
 	)
 
-	if tmp, ok = paramsv["until"]; !ok {
-		return fmt.Errorf("required end time is missing")
+	if tmp, ok = paramsv["from"]; !ok {
+		return fmt.Errorf("required start time is missing")
 	}
-	end, err := strconv.ParseInt(tmp[0], 10, 64)
+	start, err := strconv.ParseInt(tmp[0], 10, 64)
 	if err != nil {
-		return fmt.Errorf("failed to parse end time: %w", err)
+		return fmt.Errorf("failed to parse start time: %w", err)
 	}
-	rec.SetTimestamp(pcommon.Timestamp(end))
+	rec.SetTimestamp(pcommon.Timestamp(start))
 
 	if tmp, ok = paramsv["name"]; !ok {
 		return fmt.Errorf("required labels are missing")
@@ -158,10 +160,14 @@ func setAttrs(params *url.Values, rec *plog.LogRecord) error {
 	name := tmp[0][:i]
 	rec.Attributes().PutStr(nameLabel, name)
 
-	if tmp, ok = paramsv["from"]; !ok {
+	if tmp, ok = paramsv["until"]; !ok {
 		return fmt.Errorf("required end time is missing")
 	}
-	rec.Attributes().PutStr("start_time", tmp[0])
+	end, err := strconv.ParseInt(tmp[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("failed to parse end time: %w", err)
+	}
+	rec.Attributes().PutStr("duration_ns", fmt.Sprint((end-start)*1e9))
 	return nil
 }
 

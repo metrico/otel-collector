@@ -113,12 +113,12 @@ func TestPyroscopeIngest(t *testing.T) {
 		},
 		jfr: jfr,
 		expected: gen(&profile_t{
-			timestamp: 1700332329,
+			timestamp: 1700332322,
 			attrs: map[string]any{
 				"__name__":            "com.example.App",
 				"dc":                  "us-east-1",
 				"kubernetes_pod_name": "app-abcd1234",
-				"start_time":          "1700332322",
+				"duration_ns":         "7000000000",
 			},
 			body: &data,
 		}),
@@ -134,10 +134,10 @@ func TestPyroscopeIngest(t *testing.T) {
 		},
 		jfr: jfr,
 		expected: gen(&profile_t{
-			timestamp: 1700332339,
+			timestamp: 1700332332,
 			attrs: map[string]any{
-				"__name__":   "com.example.App",
-				"start_time": "1700332332",
+				"__name__":    "com.example.App",
+				"duration_ns": "7000000000",
 			},
 			body: &data,
 		}),
