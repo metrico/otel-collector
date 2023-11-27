@@ -1,12 +1,11 @@
 package pyroscopereceiver
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,10 +24,7 @@ import (
 
 const (
 	ingestPath = "/ingest"
-
-	expectedDataSizeBytes = 15e3
-
-	nameLabel = "__name__"
+	nameLabel  = "__name__"
 )
 
 type pyroscopeReceiver struct {
@@ -49,7 +45,7 @@ func newPyroscopeReceiver(baseCfg *Config, consumer consumer.Logs, params *recei
 		next:     consumer,
 		settings: params,
 	}
-	recv.decompressor = newDecompressor(recv.conf)
+	recv.decompressor = newDecompressor(recv.conf.Protocols.Http.MaxRequestBodySize)
 	recv.httpMux = http.NewServeMux()
 	recv.httpMux.HandleFunc(ingestPath, func(resp http.ResponseWriter, req *http.Request) {
 		handleIngest(resp, req, recv)
@@ -57,14 +53,79 @@ func newPyroscopeReceiver(baseCfg *Config, consumer consumer.Logs, params *recei
 	return recv
 }
 
+func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
+	logs := plog.NewLogs()
+	rec := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+
+	params := req.URL.Query()
+	if err := setAttrs(&params, &rec); err != nil {
+		return &logs, err
+	}
+
+	// support jfr only
+	if tmp, ok := params["format"]; !ok || tmp[0] != "jfr" {
+		return &logs, fmt.Errorf("unsupported format, supported: [jfr]")
+	}
+
+	// support only multipart/form-data
+	file, err := recv.openMultipartJfr(req)
+	if err != nil {
+		return &logs, err
+	}
+	defer file.Close()
+
+	buf, err := recv.decompressor.decompress(file, "gzip")
+	if err != nil {
+		return &logs, fmt.Errorf("failed to decompress body: %w", err)
+	}
+	resetHeaders(req)
+
+	// TODO: avoid realloc of []byte in buf.Bytes()
+	rec.Body().SetEmptyBytes().FromRaw(buf.Bytes())
+
+	return &logs, nil
+}
+
+func (d *pyroscopeReceiver) openMultipartJfr(unparsed *http.Request) (multipart.File, error) {
+	if err := unparsed.ParseMultipartForm(d.conf.Protocols.Http.MaxRequestBodySize); err != nil {
+		return nil, fmt.Errorf("failed to parse multipart request: %w", err)
+	}
+
+	part, ok := unparsed.MultipartForm.File["jfr"]
+	if !ok {
+		return nil, fmt.Errorf("required jfr part is missing")
+	}
+	if len(part) != 1 {
+		return nil, fmt.Errorf("invalid jfr part")
+	}
+	jfr := part[0]
+	if jfr.Filename != "jfr" {
+		return nil, fmt.Errorf("invalid jfr part file")
+	}
+	file, err := jfr.Open()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open jfr file")
+	}
+	return file, nil
+}
+
+func resetHeaders(req *http.Request) {
+	// reset content-type for the new binary jfr body
+	req.Header.Set("Content-Type", "application/octet-stream")
+	// multipart content-types cannot have encodings so no need to Del() Content-Encoding
+	// reset "Content-Length" to -1 as the size of the decompressed body is unknown
+	req.Header.Del("Content-Length")
+	req.ContentLength = -1
+}
+
 func setAttrs(params *url.Values, rec *plog.LogRecord) error {
 	var (
 		tmp     []string
 		ok      bool
-		vparams = *params
+		paramsv = *params
 	)
 
-	if tmp, ok = vparams["until"]; !ok {
+	if tmp, ok = paramsv["until"]; !ok {
 		return fmt.Errorf("required end time is missing")
 	}
 	end, err := strconv.ParseInt(tmp[0], 10, 64)
@@ -73,7 +134,7 @@ func setAttrs(params *url.Values, rec *plog.LogRecord) error {
 	}
 	rec.SetTimestamp(pcommon.Timestamp(end))
 
-	if tmp, ok = vparams["name"]; !ok {
+	if tmp, ok = paramsv["name"]; !ok {
 		return fmt.Errorf("required labels are missing")
 	}
 	i := strings.Index(tmp[0], "{")
@@ -94,57 +155,11 @@ func setAttrs(params *url.Values, rec *plog.LogRecord) error {
 	name := tmp[0][:i]
 	rec.Attributes().PutStr(nameLabel, name)
 
-	if tmp, ok = vparams["from"]; !ok {
+	if tmp, ok = paramsv["from"]; !ok {
 		return fmt.Errorf("required end time is missing")
 	}
 	rec.Attributes().PutStr("start_time", tmp[0])
 	return nil
-}
-
-func (recv *pyroscopeReceiver) readBytes(r io.ReadCloser) (*bytes.Buffer, error) {
-	var buf bytes.Buffer
-	// small extra space to try avoid realloc where expected size fits enough and +1 like limit
-	buf.Grow(expectedDataSizeBytes + bytes.MinRead + 1)
-
-	// read max+1 to validate size via a single Read()
-	lr := io.LimitReader(r, recv.conf.Protocols.Http.MaxRequestBodySize+1)
-
-	// doesnt return EOF
-	n, err := buf.ReadFrom(lr)
-	if err != nil {
-		return nil, err
-	}
-	if n < 1 {
-		return nil, fmt.Errorf("empty profile")
-	}
-	if n > recv.conf.Protocols.Http.MaxRequestBodySize {
-		return nil, fmt.Errorf("body size exceeds the limit %d bytes", recv.conf.Protocols.Http.MaxRequestBodySize)
-	}
-	return &buf, nil
-}
-
-func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
-	logs := plog.NewLogs()
-	rec := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
-
-	params := req.URL.Query()
-	if err := setAttrs(&params, &rec); err != nil {
-		return &logs, err
-	}
-
-	// support jfr only
-	if tmp, ok := params["format"]; !ok || tmp[0] != "jfr" {
-		return &logs, fmt.Errorf("unsupported format, supported: [jfr]")
-	}
-
-	buf, err := recv.readBytes(req.Body)
-	if err != nil {
-		return &logs, fmt.Errorf("failed to read body: %w", err)
-	}
-	// TODO: avoid realloc of []byte in buf.Bytes()
-	rec.Body().SetEmptyBytes().FromRaw(buf.Bytes())
-
-	return &logs, nil
 }
 
 func handleIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeReceiver) {
@@ -156,13 +171,6 @@ func handleIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeRe
 	}
 
 	ctx := req.Context()
-	err := recv.decompressor.decompress(req)
-	if err != nil {
-		msg := err.Error()
-		log.Printf("%s\n", msg)
-		writeResponse(resp, "text/plain", http.StatusBadRequest, []byte(msg))
-		return
-	}
 	logs, err := parse(req, recv)
 	if err != nil {
 		msg := err.Error()

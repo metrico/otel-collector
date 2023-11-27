@@ -1,21 +1,24 @@
 package pyroscopereceiver
 
 import (
+	"bytes"
 	"compress/gzip"
 	"fmt"
 	"io"
-	"mime/multipart"
-	"net/http"
+)
+
+const (
+	expectedDataSizeBytes = 15e3
 )
 
 type decompressor struct {
-	conf     *Config
-	decoders map[string]func(body io.ReadCloser) (io.ReadCloser, error)
+	maxDecompressedSizeBytes int64
+	decoders                 map[string]func(body io.ReadCloser) (io.ReadCloser, error)
 }
 
-func newDecompressor(conf *Config) *decompressor {
+func newDecompressor(maxDecompressedSizeBytes int64) *decompressor {
 	return &decompressor{
-		conf: conf,
+		maxDecompressedSizeBytes: maxDecompressedSizeBytes,
 		decoders: map[string]func(r io.ReadCloser) (io.ReadCloser, error){
 			"gzip": func(r io.ReadCloser) (io.ReadCloser, error) {
 				gr, err := gzip.NewReader(r)
@@ -28,61 +31,38 @@ func newDecompressor(conf *Config) *decompressor {
 	}
 }
 
-// Prepares the accepted request body for decompressed read
-func (d *decompressor) decompress(req *http.Request) error {
-	// support gzip only
-	decoder := d.decoders["gzip"]
+func (d *decompressor) readBytes(r io.ReadCloser) (*bytes.Buffer, error) {
+	var buf bytes.Buffer
+	// small extra space to try avoid realloc where expected size fits enough and +1 like limit
+	buf.Grow(expectedDataSizeBytes + bytes.MinRead + 1)
 
-	// support only multipart/form-data
-	file, err := d.openMultipartJfr(req)
+	// read max+1 to validate size via a single Read()
+	lr := io.LimitReader(r, d.maxDecompressedSizeBytes+1)
+
+	n, err := buf.ReadFrom(lr)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer file.Close()
-
-	// close old body
-	if err = req.Body.Close(); err != nil {
-		return err
+	if n < 1 {
+		return nil, fmt.Errorf("empty profile")
 	}
-
-	resetHeaders(req)
-	reader, err := decoder(file)
-	if err != nil {
-		return err
+	if n > d.maxDecompressedSizeBytes {
+		return nil, fmt.Errorf("body size exceeds the limit %d bytes", d.maxDecompressedSizeBytes)
 	}
-	// new body should be closed by the server
-	req.Body = reader
-	return nil
+	return &buf, nil
 }
 
-func (d *decompressor) openMultipartJfr(unparsed *http.Request) (multipart.File, error) {
-	if err := unparsed.ParseMultipartForm(d.conf.Protocols.Http.MaxRequestBodySize); err != nil {
-		return nil, fmt.Errorf("failed to parse multipart request: %w", err)
-	}
-
-	part, ok := unparsed.MultipartForm.File["jfr"]
+// Reads and decompresses the accepted reader, applying the configured decompressed size limit
+func (d *decompressor) decompress(r io.ReadCloser, encoding string) (*bytes.Buffer, error) {
+	decoder, ok := d.decoders[encoding]
 	if !ok {
-		return nil, fmt.Errorf("required jfr part is missing")
+		return nil, fmt.Errorf("unsupported encoding")
 	}
-	if len(part) != 1 {
-		return nil, fmt.Errorf("invalid jfr part")
-	}
-	jfr := part[0]
-	if jfr.Filename != "jfr" {
-		return nil, fmt.Errorf("invalid jfr part file")
-	}
-	file, err := jfr.Open()
-	if err != nil {
-		return nil, fmt.Errorf("failed to open jfr file")
-	}
-	return file, nil
-}
 
-func resetHeaders(req *http.Request) {
-	// reset content-type for the new binary jfr body
-	req.Header.Set("Content-Type", "application/octet-stream")
-	// multipart content-types cannot have encodings so no need to Del() Content-Encoding
-	// reset "Content-Length" to -1 as the size of the decompressed body is unknown
-	req.Header.Del("Content-Length")
-	req.ContentLength = -1
+	dr, err := decoder(r)
+	if err != nil {
+		return nil, err
+	}
+
+	return d.readBytes(dr)
 }
