@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -31,6 +30,7 @@ type pyroscopeReceiver struct {
 	conf     *Config
 	next     consumer.Logs
 	settings *receiver.CreateSettings
+	logger   *zap.Logger
 	host     component.Host
 
 	httpMux      *http.ServeMux
@@ -44,6 +44,7 @@ func newPyroscopeReceiver(baseCfg *Config, consumer consumer.Logs, params *recei
 		conf:     baseCfg,
 		next:     consumer,
 		settings: params,
+		logger:   params.Logger,
 	}
 	recv.decompressor = newDecompressor(recv.conf.Protocols.Http.MaxRequestBodySize)
 	recv.httpMux = http.NewServeMux()
@@ -165,7 +166,7 @@ func setAttrs(params *url.Values, rec *plog.LogRecord) error {
 func handleIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeReceiver) {
 	if req.Method != http.MethodPost {
 		msg := fmt.Sprintf("method not allowed, supported: [%s]", http.MethodPost)
-		log.Printf("%s\n", msg)
+		recv.logger.Error(msg)
 		writeResponse(resp, "text/plain", http.StatusMethodNotAllowed, []byte(msg))
 		return
 	}
@@ -174,7 +175,7 @@ func handleIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeRe
 	logs, err := parse(req, recv)
 	if err != nil {
 		msg := err.Error()
-		log.Printf("%s\n", msg)
+		recv.logger.Error(msg)
 		writeResponse(resp, "text/plain", http.StatusBadRequest, []byte(msg))
 		return
 	}
@@ -192,7 +193,7 @@ func (recv *pyroscopeReceiver) Start(_ context.Context, host component.Host) err
 		return fmt.Errorf("failed to create http server: %w", err)
 	}
 
-	recv.settings.Logger.Info("server listening on", zap.String("endpoint", recv.conf.Protocols.Http.Endpoint))
+	recv.logger.Info("server listening on", zap.String("endpoint", recv.conf.Protocols.Http.Endpoint))
 	var listener net.Listener
 	if listener, err = recv.conf.Protocols.Http.ToListener(); err != nil {
 		return fmt.Errorf("failed to create tcp listener: %w", err)

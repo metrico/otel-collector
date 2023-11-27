@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/receiver/receivertest"
+	"go.uber.org/zap"
 )
 
 func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
@@ -35,6 +36,7 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 	}
 	sink := new(consumertest.LogsSink)
 	sett := receivertest.NewNopCreateSettings()
+	sett.Logger = zap.Must(zap.NewDevelopment())
 	recv := newPyroscopeReceiver(config, sink, &sett)
 
 	require.NoError(t, recv.Start(context.Background(), componenttest.NewNopHost()))
