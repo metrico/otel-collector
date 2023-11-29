@@ -6,6 +6,7 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/otelcol"
+	_ "go.uber.org/automaxprocs"
 )
 
 func main() {
