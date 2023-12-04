@@ -7,10 +7,6 @@ import (
 	"io"
 )
 
-const (
-	expectedDataSizeBytes = 16e3
-)
-
 type decompressor struct {
 	maxDecompressedSizeBytes int64
 	decoders                 map[string]func(body io.ReadCloser) (io.ReadCloser, error)
@@ -32,9 +28,16 @@ func newDecompressor(maxDecompressedSizeBytes int64) *decompressor {
 }
 
 func (d *decompressor) readBytes(r io.ReadCloser) (*bytes.Buffer, error) {
-	var buf bytes.Buffer
+	var (
+		buf                   bytes.Buffer
+		expectedDataSizeBytes int64 = 10e3
+	)
+
+	if d.maxDecompressedSizeBytes < expectedDataSizeBytes {
+		expectedDataSizeBytes = d.maxDecompressedSizeBytes
+	}
 	// small extra space to try avoid realloc where expected size fits enough and +1 like limit
-	buf.Grow(expectedDataSizeBytes + bytes.MinRead + 1)
+	buf.Grow(int(expectedDataSizeBytes) + bytes.MinRead + 1)
 
 	// read max+1 to validate size via a single Read()
 	lr := io.LimitReader(r, d.maxDecompressedSizeBytes+1)
