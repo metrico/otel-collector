@@ -12,6 +12,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/compress"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/profile"
+
 	promql_parser "github.com/prometheus/prometheus/promql/parser"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
@@ -35,7 +39,7 @@ type pyroscopeReceiver struct {
 	host     component.Host
 
 	httpMux      *http.ServeMux
-	decompressor *decompressor
+	decompressor *compress.Decompressor
 	httpServer   *http.Server
 	shutdownWg   sync.WaitGroup
 }
@@ -47,7 +51,7 @@ func newPyroscopeReceiver(baseCfg *Config, consumer consumer.Logs, params *recei
 		settings: params,
 		logger:   params.Logger,
 	}
-	recv.decompressor = newDecompressor(recv.conf.Protocols.Http.MaxRequestBodySize)
+	recv.decompressor = compress.NewDecompressor(recv.conf.Protocols.Http.MaxRequestBodySize)
 	recv.httpMux = http.NewServeMux()
 	recv.httpMux.HandleFunc(ingestPath, func(resp http.ResponseWriter, req *http.Request) {
 		handleIngest(resp, req, recv)
@@ -56,16 +60,20 @@ func newPyroscopeReceiver(baseCfg *Config, consumer consumer.Logs, params *recei
 }
 
 func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
+	var (
+		tmp []string
+		ok  bool
+	)
 	logs := plog.NewLogs()
 	rec := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
 
 	params := req.URL.Query()
-	if err := setAttrs(&params, &rec); err != nil {
+	if err := setAttrsFromParams(&params, &rec); err != nil {
 		return &logs, err
 	}
 
 	// support jfr only
-	if tmp, ok := params["format"]; !ok || tmp[0] != "jfr" {
+	if tmp, ok = params["format"]; !ok || tmp[0] != "jfr" {
 		return &logs, fmt.Errorf("unsupported format, supported: [jfr]")
 	}
 
@@ -76,16 +84,30 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
 	}
 	defer file.Close()
 
-	buf, err := recv.decompressor.decompress(file, "gzip")
+	buf, err := recv.decompressor.Decompress(file, "gzip")
 	if err != nil {
 		return &logs, fmt.Errorf("failed to decompress body: %w", err)
 	}
 	resetHeaders(req)
 
-	// parse jfr
+	md := profile.Metadata{SampleRateHertz: 0}
+	tmp, ok = params["sampleRate"]
+	if ok {
+		hz, err := strconv.ParseUint(tmp[0], 10, 64)
+		if err != nil {
+			return &logs, fmt.Errorf("failed to parse rate: %w", err)
+		}
+		md.SampleRateHertz = hz
+	}
 
-	// TODO: avoid realloc of []byte in buf.Bytes()
-	rec.Body().SetEmptyBytes().FromRaw(buf.Bytes())
+	prof, err := jfrparser.NewJfrParser(buf, md, recv.conf.Protocols.Http.MaxRequestBodySize).ParsePprof()
+	if err != nil {
+		return &logs, fmt.Errorf("failed to parse pprof: %w", err)
+	}
+	setAttrsFromProfile(prof, &rec)
+
+	// TODO: consider to avoid copy in FromRaw()
+	rec.Body().SetEmptyBytes().FromRaw(prof.Payload.Bytes())
 
 	return &logs, nil
 }
@@ -123,7 +145,7 @@ func resetHeaders(req *http.Request) {
 	req.ContentLength = -1
 }
 
-func setAttrs(params *url.Values, rec *plog.LogRecord) error {
+func setAttrsFromParams(params *url.Values, rec *plog.LogRecord) error {
 	var (
 		tmp     []string
 		ok      bool
@@ -133,7 +155,7 @@ func setAttrs(params *url.Values, rec *plog.LogRecord) error {
 	if tmp, ok = paramsv["from"]; !ok {
 		return fmt.Errorf("required start time is missing")
 	}
-	start, err := strconv.ParseInt(tmp[0], 10, 64)
+	start, err := strconv.ParseUint(tmp[0], 10, 64)
 	if err != nil {
 		return fmt.Errorf("failed to parse start time: %w", err)
 	}
@@ -163,12 +185,21 @@ func setAttrs(params *url.Values, rec *plog.LogRecord) error {
 	if tmp, ok = paramsv["until"]; !ok {
 		return fmt.Errorf("required end time is missing")
 	}
-	end, err := strconv.ParseInt(tmp[0], 10, 64)
+	end, err := strconv.ParseUint(tmp[0], 10, 64)
 	if err != nil {
 		return fmt.Errorf("failed to parse end time: %w", err)
 	}
 	rec.Attributes().PutStr("duration_ns", fmt.Sprint((end-start)*1e9))
 	return nil
+}
+
+func setAttrsFromProfile(prof *profile.Profile, rec *plog.LogRecord) {
+	rec.Attributes().PutStr("type", prof.Type.Type)
+	rec.Attributes().PutStr("sample_type", strings.Join(prof.Type.SampleType, ","))
+	rec.Attributes().PutStr("sample_unit", strings.Join(prof.Type.SampleUnit, ","))
+	rec.Attributes().PutStr("period_type", prof.Type.PeriodType)
+	rec.Attributes().PutStr("period_unit", prof.Type.PeriodUnit)
+	rec.Attributes().PutStr("payload_type", fmt.Sprint(prof.PayloadType))
 }
 
 func handleIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeReceiver) {
@@ -189,6 +220,7 @@ func handleIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeRe
 	}
 
 	// delegate to next consumer in the pipeline
+	// TODO: support memorylimiter processor, apply retry policy on "oom", and consider to shift right allocs from the receiver
 	recv.next.ConsumeLogs(ctx, *logs)
 }
 

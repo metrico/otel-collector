@@ -1,4 +1,4 @@
-package pyroscopereceiver
+package compress
 
 import (
 	"bytes"
@@ -7,13 +7,13 @@ import (
 	"io"
 )
 
-type decompressor struct {
+type Decompressor struct {
 	maxDecompressedSizeBytes int64
 	decoders                 map[string]func(body io.ReadCloser) (io.ReadCloser, error)
 }
 
-func newDecompressor(maxDecompressedSizeBytes int64) *decompressor {
-	return &decompressor{
+func NewDecompressor(maxDecompressedSizeBytes int64) *Decompressor {
+	return &Decompressor{
 		maxDecompressedSizeBytes: maxDecompressedSizeBytes,
 		decoders: map[string]func(r io.ReadCloser) (io.ReadCloser, error){
 			"gzip": func(r io.ReadCloser) (io.ReadCloser, error) {
@@ -27,17 +27,8 @@ func newDecompressor(maxDecompressedSizeBytes int64) *decompressor {
 	}
 }
 
-func (d *decompressor) readBytes(r io.ReadCloser) (*bytes.Buffer, error) {
-	var (
-		buf                   bytes.Buffer
-		expectedDataSizeBytes int64 = 10e3
-	)
-
-	if d.maxDecompressedSizeBytes < expectedDataSizeBytes {
-		expectedDataSizeBytes = d.maxDecompressedSizeBytes
-	}
-	// small extra space to try avoid realloc where expected size fits enough and +1 like limit
-	buf.Grow(int(expectedDataSizeBytes) + bytes.MinRead + 1)
+func (d *Decompressor) readBytes(r io.ReadCloser) (*bytes.Buffer, error) {
+	buf := PrepareBuffer(d.maxDecompressedSizeBytes)
 
 	// read max+1 to validate size via a single Read()
 	lr := io.LimitReader(r, d.maxDecompressedSizeBytes+1)
@@ -52,11 +43,11 @@ func (d *decompressor) readBytes(r io.ReadCloser) (*bytes.Buffer, error) {
 	if n > d.maxDecompressedSizeBytes {
 		return nil, fmt.Errorf("body size exceeds the limit %d bytes", d.maxDecompressedSizeBytes)
 	}
-	return &buf, nil
+	return buf, nil
 }
 
 // Reads and decompresses the accepted reader, applying the configured decompressed size limit
-func (d *decompressor) decompress(r io.ReadCloser, encoding string) (*bytes.Buffer, error) {
+func (d *Decompressor) Decompress(r io.ReadCloser, encoding string) (*bytes.Buffer, error) {
 	decoder, ok := d.decoders[encoding]
 	if !ok {
 		return nil, fmt.Errorf("unsupported encoding")
@@ -68,4 +59,18 @@ func (d *decompressor) decompress(r io.ReadCloser, encoding string) (*bytes.Buff
 	}
 
 	return d.readBytes(dr)
+}
+
+func PrepareBuffer(maxDecompressedSizeBytes int64) *bytes.Buffer {
+	var (
+		buf                   bytes.Buffer
+		expectedDataSizeBytes int64 = 10e3
+	)
+
+	if maxDecompressedSizeBytes < expectedDataSizeBytes {
+		expectedDataSizeBytes = maxDecompressedSizeBytes
+	}
+	// extra space to try avoid realloc where expected size fits enough
+	buf.Grow(int(expectedDataSizeBytes) + bytes.MinRead)
+	return &buf
 }

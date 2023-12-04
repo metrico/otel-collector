@@ -590,7 +590,8 @@ github.com/google/pprof v0.0.0-20210226084205-cbba55b83ad5/go.mod h1:kpwsk12EmLe
 github.com/google/pprof v0.0.0-20210601050228-01bbb1931b22/go.mod h1:kpwsk12EmLew5upagYY7GY0pfYCcupk39gWOCRROcvE=
 github.com/google/pprof v0.0.0-20210609004039-a478d1d731e9/go.mod h1:kpwsk12EmLew5upagYY7GY0pfYCcupk39gWOCRROcvE=
 github.com/google/pprof v0.0.0-20210720184732-4bb14d4b1be1/go.mod h1:kpwsk12EmLew5upagYY7GY0pfYCcupk39gWOCRROcvE=
-github.com/google/pprof v0.0.0-20230705174524-200ffdc848b8 h1:n6vlPhxsA+BW/XsS5+uqi7GyzaLa5MH7qlSLBZtRdiA=
+github.com/google/pprof v0.0.0-20231127191134-f3a68a39ae15 h1:t2sLhFuGXwoomaKLTuoxFfFqqlG1Gp2DpsupXq3UvZ0=
+github.com/google/pprof v0.0.0-20231127191134-f3a68a39ae15/go.mod h1:czg5+yv1E0ZGTi6S6vVK1mke0fV+FaUhNGcd6VRS9Ik=
 github.com/google/renameio v0.1.0/go.mod h1:KWCgfxg9yswjAJkECMjeO8J8rahYeXnNhOm40UhjYkI=
 github.com/google/s2a-go v0.1.7 h1:60BLSyTrOV4/haCDW4zb1guZItoSq8foHCXrAnjBo/o=
 github.com/google/s2a-go v0.1.7/go.mod h1:50CgR4k1jNlWBu4UfS4AcfhVe1r6pdZPygJ3R8F0Qdw=
@@ -620,6 +621,8 @@ github.com/gorilla/websocket v1.5.0 h1:PPwGk2jz7EePpoHN/+ClbZu8SPxiqlu12wZP/3sWm
 github.com/gorilla/websocket v1.5.0/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/gosnmp/gosnmp v1.35.0 h1:EuWWNPxTCdAUx2/NbQcSa3WdNxjzpy4Phv57b4MWpJM=
 github.com/gosnmp/gosnmp v1.35.0/go.mod h1:2AvKZ3n9aEl5TJEo/fFmf/FGO4Nj4cVeEc5yuk88CYc=
+github.com/grafana/jfr-parser v0.7.2-0.20230831140626-08fa3a941bf8 h1:Cod+QZWJXGLoCfKfuH66J3iSQ/WWw+R03R6QCwm8IB8=
+github.com/grafana/jfr-parser v0.7.2-0.20230831140626-08fa3a941bf8/go.mod h1:M5u1ux34Qo47ZBWksbMYVk40s7dvU3WMVYpxweEu4R0=
 github.com/grafana/loki/pkg/push v0.0.0-20230321110627-5c3d204ebf5d h1:InEQBUAKYIHRlOVvxWxvpW5pziK53RdlhsuRJzBWUmE=
 github.com/grafana/loki/pkg/push v0.0.0-20230321110627-5c3d204ebf5d/go.mod h1:BjNgF1EfQglDCrCbF0qiQLqAoBKva0/es63lSKT2TXw=
 github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd h1:PpuIBO5P3e9hpqBD0O/HjhShYuM6XE0i/lbE6J94kww=
