@@ -15,6 +15,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.10.1
 	github.com/go-logfmt/logfmt v0.6.0
 	github.com/google/pprof v0.0.0-20231127191134-f3a68a39ae15
+	github.com/grafana/jfr-parser v0.7.2-0.20230831140626-08fa3a941bf8
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/carbonexporter v0.87.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.87.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/jaegerexporter v0.85.0
@@ -153,7 +154,6 @@ require (
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.26.0
 	google.golang.org/protobuf v1.31.0
-	github.com/grafana/jfr-parser v0.7.2-0.20230831140626-08fa3a941bf8
 )
 
 require (

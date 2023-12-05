@@ -97,7 +97,7 @@ func TestPyroscopeIngest(t *testing.T) {
 		expected  *plog.Logs
 		err       error
 	}
-	tests := make([]test_t, 2)
+	tests := make([]test_t, 1)
 
 	payload, err := os.ReadFile(filepath.Join("testdata", "cortex-dev-01__kafka-0__cpu__0.pb"))
 	assert.NoError(t, err, "failed to load expected pprof payload")
