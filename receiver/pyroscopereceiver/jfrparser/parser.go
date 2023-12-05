@@ -13,12 +13,12 @@ import (
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/profile"
 )
 
-type meta struct {
+type metadata struct {
 	period int64
 }
 
 type parser struct {
-	md                       meta
+	md                       metadata
 	pa                       *jfr_parser.Parser
 	maxDecompressedSizeBytes int64
 
@@ -53,15 +53,15 @@ const (
 
 // Creates a jfr parser that parse the accepted jfr buffer
 func NewJfrParser(jfr *bytes.Buffer, md profile.Metadata, maxDecompressedSizeBytes int64) *parser {
-	var pe int64
+	var period int64
 	if md.SampleRateHertz == 0 {
-		pe = 0
+		period = 1
 	} else {
-		pe = 1e9 / int64(md.SampleRateHertz)
+		period = 1e9 / int64(md.SampleRateHertz)
 	}
 	pa := jfr_parser.NewParser(jfr.Bytes(), jfr_parser.Options{SymbolProcessor: nopSymbolProcessor})
 	return &parser{
-		md:                       meta{period: pe},
+		md:                       metadata{period: period},
 		pa:                       pa,
 		maxDecompressedSizeBytes: maxDecompressedSizeBytes,
 		sampleMap:                make(map[uint32]uint32),
@@ -69,7 +69,7 @@ func NewJfrParser(jfr *bytes.Buffer, md profile.Metadata, maxDecompressedSizeByt
 	}
 }
 
-// Gets the type of the first data (non-settings) record,
+// Gets the type of the first data record (non-settings),
 // which is determines the profile type because a profile should bind to a single type.
 // The caller should not call ParseEvent() to process the event, as it is being called internally.
 func (p *parser) parseType() (def.TypeID, int, string, error) {
@@ -78,7 +78,7 @@ func (p *parser) parseType() (def.TypeID, int, string, error) {
 		t, err := p.pa.ParseEvent()
 		if err != nil {
 			if io.EOF == err {
-				return def.TypeID(0), -1, "", fmt.Errorf("found zero data (non-settings) records")
+				return def.TypeID(0), -1, "", fmt.Errorf("found no data records (non-settings)")
 			}
 			return def.TypeID(0), -1, "", fmt.Errorf("jfr-parser ParseEvent error while parsing type: %w", err)
 		}
@@ -133,7 +133,7 @@ func (p *parser) ParsePprof() (*profile.Profile, error) {
 	for {
 		switch t {
 		case p.pa.TypeMap.T_EXECUTION_SAMPLE:
-			values[0] *= int64(p.md.period)
+			values[0] = 1 * int64(p.md.period)
 			ts := p.pa.GetThreadState(p.pa.ExecutionSample.State)
 			if ts != nil && ts.Name == "STATE_RUNNABLE" {
 				p.addStacktrace(pprof, sampleTypeCpu, p.pa.ExecutionSample.StackTrace, values[:1])

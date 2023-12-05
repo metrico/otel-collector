@@ -63,14 +63,14 @@ func (d *Decompressor) Decompress(r io.ReadCloser, encoding string) (*bytes.Buff
 
 func PrepareBuffer(maxDecompressedSizeBytes int64) *bytes.Buffer {
 	var (
-		buf                   bytes.Buffer
-		expectedDataSizeBytes int64 = 10e3
+		buf                      bytes.Buffer
+		expectedMinDataSizeBytes int64 = 10e3
 	)
 
-	if maxDecompressedSizeBytes < expectedDataSizeBytes {
-		expectedDataSizeBytes = maxDecompressedSizeBytes
+	if maxDecompressedSizeBytes < expectedMinDataSizeBytes {
+		expectedMinDataSizeBytes = maxDecompressedSizeBytes
 	}
 	// extra space to try avoid realloc where expected size fits enough
-	buf.Grow(int(expectedDataSizeBytes) + bytes.MinRead)
+	buf.Grow(int(expectedMinDataSizeBytes) + bytes.MinRead)
 	return &buf
 }

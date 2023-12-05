@@ -99,19 +99,18 @@ func TestPyroscopeIngest(t *testing.T) {
 	}
 	tests := make([]test_t, 2)
 
-	jfr := filepath.Join("testdata", "profile.jfr")
-	data, err := os.ReadFile(jfr)
-	assert.NoError(t, err, "failed to load expected jfr")
-
+	payload, err := os.ReadFile(filepath.Join("testdata", "cortex-dev-01__kafka-0__cpu__0.pb"))
+	assert.NoError(t, err, "failed to load expected pprof payload")
 	tests[0] = test_t{
-		name: "send labeled multipart form data gzipped jfr to http ingest endpoint",
+		name: "send labeled multipart form data gzipped cpu jfr to http ingest endpoint",
 		urlParams: map[string]string{
-			"name":   "com.example.App{dc=\"us-east-1\",kubernetes_pod_name=\"app-abcd1234\"}",
-			"from":   "1700332322",
-			"until":  "1700332329",
-			"format": "jfr",
+			"name":       "com.example.App{dc=\"us-east-1\",kubernetes_pod_name=\"app-abcd1234\"}",
+			"from":       "1700332322",
+			"until":      "1700332329",
+			"format":     "jfr",
+			"sampleRate": "100",
 		},
-		jfr: jfr,
+		jfr: filepath.Join("testdata", "cortex-dev-01__kafka-0__cpu__0.jfr"),
 		expected: gen(&profile_t{
 			timestamp: 1700332322,
 			attrs: map[string]any{
@@ -119,27 +118,14 @@ func TestPyroscopeIngest(t *testing.T) {
 				"dc":                  "us-east-1",
 				"kubernetes_pod_name": "app-abcd1234",
 				"duration_ns":         "7000000000",
+				"type":                "process_cpu",
+				"sample_type":         "cpu",
+				"sample_unit":         "nanoseconds",
+				"period_type":         "cpu",
+				"period_unit":         "nanoseconds",
+				"payload_type":        "0",
 			},
-			body: &data,
-		}),
-		err: nil,
-	}
-	tests[1] = test_t{
-		name: "send not labeled multipart form data gzipped jfr to http ingest endpoint",
-		urlParams: map[string]string{
-			"name":   "com.example.App",
-			"from":   "1700332332",
-			"until":  "1700332339",
-			"format": "jfr",
-		},
-		jfr: jfr,
-		expected: gen(&profile_t{
-			timestamp: 1700332332,
-			attrs: map[string]any{
-				"__name__":    "com.example.App",
-				"duration_ns": "7000000000",
-			},
-			body: &data,
+			body: &payload,
 		}),
 		err: nil,
 	}
@@ -169,7 +155,7 @@ func getAvailableLocalTcpPort(t *testing.T) string {
 }
 
 type profile_t struct {
-	timestamp int64
+	timestamp uint64
 	body      *[]byte
 	attrs     map[string]any
 }
