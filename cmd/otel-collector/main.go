@@ -6,7 +6,9 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/otelcol"
-	_ "go.uber.org/automaxprocs"
+
+	_ "github.com/KimMachineGun/automemlimit" // default == 0.9 * cgroup_memory_limit
+	_ "go.uber.org/automaxprocs"              // default == cgroup_cpu_limit
 )
 
 func main() {

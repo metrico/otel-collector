@@ -13,6 +13,7 @@ exclude github.com/StackExchange/wmi v1.2.0
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.10.1
+	github.com/KimMachineGun/automemlimit v0.4.0
 	github.com/go-logfmt/logfmt v0.6.0
 	github.com/google/pprof v0.0.0-20231127191134-f3a68a39ae15
 	github.com/grafana/jfr-parser v0.7.2-0.20230831140626-08fa3a941bf8
@@ -156,6 +157,8 @@ require (
 	google.golang.org/protobuf v1.31.0
 )
 
+require github.com/containerd/cgroups/v3 v3.0.1 // indirect
+
 require (
 	cloud.google.com/go v0.110.7 // indirect
 	cloud.google.com/go/compute v1.23.0 // indirect
@@ -229,7 +232,7 @@ require (
 	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/checkpoint-restore/go-criu/v5 v5.3.0 // indirect
-	github.com/cilium/ebpf v0.7.0 // indirect
+	github.com/cilium/ebpf v0.9.1 // indirect
 	github.com/cloudfoundry-incubator/uaago v0.0.0-20190307164349-8136b7bbe76e // indirect
 	github.com/cncf/udpa/go v0.0.0-20220112060539-c52dc94e7fbe // indirect
 	github.com/cncf/xds/go v0.0.0-20230607035331-e9ce68804cb4 // indirect
