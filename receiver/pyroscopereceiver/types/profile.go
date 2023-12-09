@@ -21,7 +21,7 @@ type ProfileType struct {
 }
 
 type Profile struct {
-	Type        ProfileType
+	Type        *ProfileType
 	Payload     *bytes.Buffer
 	PayloadType uint32
 }

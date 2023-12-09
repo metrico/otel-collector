@@ -14,8 +14,9 @@ import (
 
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/compress"
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
-	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/profile"
+	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
 
+	"github.com/prometheus/prometheus/model/labels"
 	promql_parser "github.com/prometheus/prometheus/promql/parser"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
@@ -59,22 +60,29 @@ func newPyroscopeReceiver(baseCfg *Config, consumer consumer.Logs, params *recei
 	return recv
 }
 
+type attrs struct {
+	start  uint64
+	end    uint64
+	name   string
+	labels *labels.Labels
+}
+
 func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
 	var (
 		tmp []string
 		ok  bool
 	)
 	logs := plog.NewLogs()
-	rec := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
 
 	params := req.URL.Query()
-	if err := setAttrsFromParams(&params, &rec); err != nil {
-		return &logs, err
-	}
-
 	// support jfr only
 	if tmp, ok = params["format"]; !ok || tmp[0] != "jfr" {
 		return &logs, fmt.Errorf("unsupported format, supported: [jfr]")
+	}
+
+	attrs, err := getAttrsFromParams(&params)
+	if err != nil {
+		return &logs, err
 	}
 
 	// support only multipart/form-data
@@ -90,7 +98,7 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
 	}
 	resetHeaders(req)
 
-	md := profile.Metadata{SampleRateHertz: 0}
+	md := profile_types.Metadata{SampleRateHertz: 0}
 	tmp, ok = params["sampleRate"]
 	if ok {
 		hz, err := strconv.ParseUint(tmp[0], 10, 64)
@@ -100,15 +108,24 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
 		md.SampleRateHertz = hz
 	}
 
-	prof, err := jfrparser.NewJfrParser(buf, md, recv.conf.Protocols.Http.MaxRequestBodySize).ParsePprof()
+	ps, err := jfrparser.NewJfrParser(buf, md, recv.conf.Protocols.Http.MaxRequestBodySize).ParsePprof()
 	if err != nil {
 		return &logs, fmt.Errorf("failed to parse pprof: %w", err)
 	}
-	setAttrsFromProfile(prof, &rec)
 
-	// TODO: consider to avoid copy in FromRaw()
-	rec.Body().SetEmptyBytes().FromRaw(prof.Payload.Bytes())
-
+	recs := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
+	for _, pp := range ps {
+		rec := recs.AppendEmpty()
+		rec.SetTimestamp(pcommon.Timestamp(attrs.start))
+		rec.Attributes().PutStr("duration_ns", fmt.Sprint((attrs.end-attrs.start)*1e9))
+		rec.Attributes().PutStr(nameLabel, attrs.name)
+		for _, l := range *attrs.labels {
+			rec.Attributes().PutStr(l.Name, l.Value)
+		}
+		setAttrsFromProfile(pp, &rec)
+		// TODO: consider to avoid copy in FromRaw()
+		rec.Body().SetEmptyBytes().FromRaw(pp.Payload.Bytes())
+	}
 	return &logs, nil
 }
 
@@ -145,24 +162,25 @@ func resetHeaders(req *http.Request) {
 	req.ContentLength = -1
 }
 
-func setAttrsFromParams(params *url.Values, rec *plog.LogRecord) error {
+func getAttrsFromParams(params *url.Values) (*attrs, error) {
 	var (
 		tmp     []string
 		ok      bool
-		paramsv = *params
+		paramsv       = *params
+		att     attrs = attrs{}
 	)
 
 	if tmp, ok = paramsv["from"]; !ok {
-		return fmt.Errorf("required start time is missing")
+		return nil, fmt.Errorf("required start time is missing")
 	}
 	start, err := strconv.ParseUint(tmp[0], 10, 64)
 	if err != nil {
-		return fmt.Errorf("failed to parse start time: %w", err)
+		return nil, fmt.Errorf("failed to parse start time: %w", err)
 	}
-	rec.SetTimestamp(pcommon.Timestamp(start))
+	att.start = start
 
 	if tmp, ok = paramsv["name"]; !ok {
-		return fmt.Errorf("required labels are missing")
+		return nil, fmt.Errorf("required labels are missing")
 	}
 	i := strings.Index(tmp[0], "{")
 	length := len(tmp[0])
@@ -172,28 +190,26 @@ func setAttrsFromParams(params *url.Values, rec *plog.LogRecord) error {
 		promql := tmp[0][i:length]
 		labels, err := promql_parser.ParseMetric(promql)
 		if err != nil {
-			return fmt.Errorf("failed to parse labels: %w", err)
+			return nil, fmt.Errorf("failed to parse labels: %w", err)
 		}
-		for _, l := range labels {
-			rec.Attributes().PutStr(l.Name, l.Value)
-		}
+		att.labels = &labels
 	}
 	// required app name
 	name := tmp[0][:i]
-	rec.Attributes().PutStr(nameLabel, name)
+	att.name = name
 
 	if tmp, ok = paramsv["until"]; !ok {
-		return fmt.Errorf("required end time is missing")
+		return nil, fmt.Errorf("required end time is missing")
 	}
 	end, err := strconv.ParseUint(tmp[0], 10, 64)
 	if err != nil {
-		return fmt.Errorf("failed to parse end time: %w", err)
+		return nil, fmt.Errorf("failed to parse end time: %w", err)
 	}
-	rec.Attributes().PutStr("duration_ns", fmt.Sprint((end-start)*1e9))
-	return nil
+	att.end = end
+	return nil, nil
 }
 
-func setAttrsFromProfile(prof *profile.Profile, rec *plog.LogRecord) {
+func setAttrsFromProfile(prof *profile_types.Profile, rec *plog.LogRecord) {
 	rec.Attributes().PutStr("type", prof.Type.Type)
 	rec.Attributes().PutStr("sample_type", strings.Join(prof.Type.SampleType, ","))
 	rec.Attributes().PutStr("sample_unit", strings.Join(prof.Type.SampleUnit, ","))
