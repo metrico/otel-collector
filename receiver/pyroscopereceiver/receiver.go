@@ -28,7 +28,7 @@ import (
 const (
 	ingestPath = "/ingest"
 	nameLabel  = "__name__"
-	jfrFormat  = "jfr"
+	formatJfr  = "jfr"
 )
 
 type pyroscopeReceiver struct {
@@ -136,13 +136,13 @@ func (recv *pyroscopeReceiver) openMultipartJfr(req *http.Request) (multipart.Fi
 		_ = mf.RemoveAll()
 	}()
 
-	part, ok := mf.File[jfrFormat]
+	part, ok := mf.File[formatJfr]
 	if !ok {
 		return nil, fmt.Errorf("required jfr part is missing")
 	}
 	fh := part[0]
-	if fh.Filename != jfrFormat {
-		return nil, fmt.Errorf("jfr filename is not '%s'", jfrFormat)
+	if fh.Filename != formatJfr {
+		return nil, fmt.Errorf("jfr filename is not '%s'", formatJfr)
 	}
 	f, err := fh.Open()
 	if err != nil {
