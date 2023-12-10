@@ -24,6 +24,31 @@ import (
 	"go.uber.org/zap"
 )
 
+type jfrtest_t struct {
+	name      string
+	urlParams map[string]string
+	jfr       string
+	expected  *plog.Logs
+	err       error
+}
+
+func loadTestData(t *testing.T, fname string) *[]byte {
+	b, err := os.ReadFile(filepath.Join("testdata", fname))
+	assert.NoError(t, err, "failed to load expected pprof payload")
+	return &b
+}
+
+func run(t *testing.T, tests *[]jfrtest_t, collectorAddr string, sink *consumertest.LogsSink) {
+	for _, tt := range *tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.NoError(t, send(t, collectorAddr, tt.urlParams, tt.jfr), "send shouldn't have been failed")
+			actual := sink.AllLogs()
+			assert.NoError(t, plogtest.CompareLogs(*tt.expected, actual[0]))
+			sink.Reset()
+		})
+	}
+}
+
 func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 	addr := getAvailableLocalTcpPort(t)
 	config := &Config{
@@ -89,19 +114,10 @@ func send(t *testing.T, addr string, urlParams map[string]string, jfr string) er
 	return nil
 }
 
-func TestPyroscopeIngest(t *testing.T) {
-	type test_t struct {
-		name      string
-		urlParams map[string]string
-		jfr       string
-		expected  *plog.Logs
-		err       error
-	}
-	tests := make([]test_t, 1)
-
-	payload, err := os.ReadFile(filepath.Join("testdata", "cortex-dev-01__kafka-0__cpu__0.pb"))
-	assert.NoError(t, err, "failed to load expected pprof payload")
-	tests[0] = test_t{
+func TestPyroscopeIngestJfrCpu(t *testing.T) {
+	tests := make([]jfrtest_t, 1)
+	pb := loadTestData(t, "cortex-dev-01__kafka-0__cpu__0.pb")
+	tests[0] = jfrtest_t{
 		name: "send labeled multipart form data gzipped cpu jfr to http ingest endpoint",
 		urlParams: map[string]string{
 			"name":       "com.example.App{dc=\"us-east-1\",kubernetes_pod_name=\"app-abcd1234\"}",
@@ -111,7 +127,7 @@ func TestPyroscopeIngest(t *testing.T) {
 			"sampleRate": "100",
 		},
 		jfr: filepath.Join("testdata", "cortex-dev-01__kafka-0__cpu__0.jfr"),
-		expected: gen(&profile_t{
+		expected: gen([]*profile_t{{
 			timestamp: 1700332322,
 			attrs: map[string]any{
 				"__name__":            "com.example.App",
@@ -125,22 +141,66 @@ func TestPyroscopeIngest(t *testing.T) {
 				"period_unit":         "nanoseconds",
 				"payload_type":        "0",
 			},
-			body: &payload,
-		}),
+			body: pb,
+		}}),
+		err: nil,
+	}
+	addr, sink := startHttpServer(t)
+	collectorAddr := fmt.Sprintf("http://%s%s", addr, ingestPath)
+	run(t, &tests, collectorAddr, sink)
+}
+
+func TestPyroscopeIngestJfrMemory(t *testing.T) {
+	tests := make([]jfrtest_t, 1)
+	allocInNewTlabPb := loadTestData(t, "memory_example_alloc_in_new_tlab.pb")
+	liveObjectPb := loadTestData(t, "memory_example_live_object.pb")
+	tests[0] = jfrtest_t{
+		name: "send labeled multipart form data gzipped memoty jfr to http ingest endpoint",
+		urlParams: map[string]string{
+			"name":   "com.example.App{dc=\"us-east-1\",kubernetes_pod_name=\"app-abcd1234\"}",
+			"from":   "1700332322",
+			"until":  "1700332329",
+			"format": "jfr",
+		},
+		jfr: filepath.Join("testdata", "memory_alloc_live_example.jfr"),
+		expected: gen([]*profile_t{{
+			timestamp: 1700332322,
+			attrs: map[string]any{
+				"__name__":            "com.example.App",
+				"dc":                  "us-east-1",
+				"kubernetes_pod_name": "app-abcd1234",
+				"duration_ns":         "7000000000",
+				"type":                "memory",
+				"sample_type":         "alloc_in_new_tlab_objects,alloc_in_new_tlab_bytes",
+				"sample_unit":         "count,bytes",
+				"period_type":         "space",
+				"period_unit":         "bytes",
+				"payload_type":        "0",
+			},
+			body: allocInNewTlabPb,
+		},
+			{
+				timestamp: 1700332322,
+				attrs: map[string]any{
+					"__name__":            "com.example.App",
+					"dc":                  "us-east-1",
+					"kubernetes_pod_name": "app-abcd1234",
+					"duration_ns":         "7000000000",
+					"type":                "memory",
+					"sample_type":         "live",
+					"sample_unit":         "count",
+					"period_type":         "objects",
+					"period_unit":         "count",
+					"payload_type":        "0",
+				},
+				body: liveObjectPb,
+			}}),
 		err: nil,
 	}
 
 	addr, sink := startHttpServer(t)
 	collectorAddr := fmt.Sprintf("http://%s%s", addr, ingestPath)
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.NoError(t, send(t, collectorAddr, tt.urlParams, tt.jfr), "send shouldn't have been failed")
-			actual := sink.AllLogs()
-			assert.NoError(t, plogtest.CompareLogs(*tt.expected, actual[0]))
-			sink.Reset()
-		})
-	}
+	run(t, &tests, collectorAddr, sink)
 }
 
 // Returns an available local tcp port. It doesnt bind the port, and there is a race condition as
@@ -160,12 +220,14 @@ type profile_t struct {
 	attrs     map[string]any
 }
 
-func gen(in *profile_t) *plog.Logs {
+func gen(in []*profile_t) *plog.Logs {
 	profiles := plog.NewLogs()
-	s := profiles.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
-	rec := s.AppendEmpty()
-	_ = rec.Attributes().FromRaw(in.attrs)
-	rec.SetTimestamp(pcommon.Timestamp(in.timestamp))
-	rec.Body().SetEmptyBytes().FromRaw(*in.body)
+	recs := profiles.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
+	for _, p := range in {
+		rec := recs.AppendEmpty()
+		_ = rec.Attributes().FromRaw(p.attrs)
+		rec.SetTimestamp(pcommon.Timestamp(p.timestamp))
+		rec.Body().SetEmptyBytes().FromRaw(*p.body)
+	}
 	return &profiles
 }
