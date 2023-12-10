@@ -57,7 +57,7 @@ otel-collector:
     restart: on-failure
 ```
 
-### Config Template
+### Config Template [view](https://www.otelbin.io/s/55bd7b91-0c89-47d4-b84c-015ad2a76790)
 The following template enables popular log, metric and tracing ingestion formats supported by qryn
 
 ```yaml
@@ -164,14 +164,12 @@ extensions:
   health_check:
   pprof:
   zpages:
-  memory_ballast:
-    size_mib: 1000
 
 service:
   extensions: [pprof, zpages, health_check]
   pipelines:
     logs:
-      receivers: [fluentforward, otlp, loki]
+      receivers: [fluentforward, otlp, loki, syslog, splunk_hec]
       processors: [memory_limiter, resourcedetection/system, resource, batch]
       exporters: [qryn]
     traces:
