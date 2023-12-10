@@ -37,9 +37,9 @@ type parser struct {
 	_pa                      *jfr_parser.Parser
 	maxDecompressedSizeBytes int64
 
-	proftab     [sampleTypeCount]*pprof          // <sample type, (profile, pprof)>
-	sampleMap   map[uint32]uint32                // <extern jfr stacktrace id,matching pprof sample array index>
-	locationMap map[uint32]*pprof_proto.Location // <extern jfr funcid, pprof location>
+	proftab [sampleTypeCount]*pprof                           // <sample type, (profile, pprof)>
+	samptab [sampleTypeCount]map[uint32]uint32                // <extern jfr stacktrace id,matching pprof sample array index>
+	loctab  [sampleTypeCount]map[uint32]*pprof_proto.Location // <extern jfr funcid, pprof location>
 }
 
 var typetab = []profile_types.ProfileType{
@@ -69,9 +69,6 @@ func NewJfrParser(jfr *bytes.Buffer, md profile_types.Metadata, maxDecompressedS
 		md:                       metadata{period: period},
 		_pa:                      jfr_parser.NewParser(jfr.Bytes(), jfr_parser.Options{SymbolProcessor: nopSymbolProcessor}),
 		maxDecompressedSizeBytes: maxDecompressedSizeBytes,
-
-		sampleMap:   make(map[uint32]uint32),
-		locationMap: make(map[uint32]*pprof_proto.Location),
 	}
 }
 
@@ -139,6 +136,9 @@ func nopSymbolProcessor(ref *jfr_types.SymbolList) {}
 
 func (pa *parser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, values []int64) {
 	p := pa.getProfile(sampleType)
+	if nil == p {
+		p = pa.addProfile(sampleType)
+	}
 
 	st := pa._pa.GetStacktrace(ref)
 	if nil == st {
@@ -151,8 +151,9 @@ func (pa *parser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, val
 		}
 	}
 
+	iref := uint32(ref)
 	// sum values for a stacktrace that already exist
-	sample := pa.getSample(p._pprof, uint32(ref))
+	sample := pa.getSample(sampleType, p._pprof, iref)
 	if sample != nil {
 		addValues(sample.Value)
 		return
@@ -162,6 +163,7 @@ func (pa *parser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, val
 	locations := make([]*pprof_proto.Location, 0, len(st.Frames))
 	for i := 0; i < len(st.Frames); i++ {
 		f := st.Frames[i]
+		imethod := uint32(f.Method)
 
 		// append location that already exists
 		// TODO: fix a bug where multiple f.Method vals are mapped to same func name but creates distinct pprof func, example:
@@ -174,8 +176,8 @@ func (pa *parser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, val
 		//   name: 118
 		// }
 		// $ cat <pb_path> | protoc --decode=perftools.profiles.Profile $HOME/go/pkg/mod/github.com/google/pprof@<version>/proto/profile.proto --proto_path $HOME/go/pkg/mod/github.com/google/pprof@<version>/proto/ >> /tmp/pprof.txt
-		loc, found := pa.getLocation(uint32(f.Method))
-		if found {
+		loc := pa.getLocation(sampleType, imethod)
+		if loc != nil {
 			locations = append(locations, loc)
 			continue
 		}
@@ -187,7 +189,7 @@ func (pa *parser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, val
 			if cls != nil {
 				clsName := pa._pa.GetSymbolString(cls.Name)
 				methodName := pa._pa.GetSymbolString(m.Name)
-				loc = pa.appendLocation(p._pprof, clsName+"."+methodName, uint32(f.Method))
+				loc = pa.appendLocation(sampleType, p._pprof, clsName+"."+methodName, imethod)
 				locations = append(locations, loc)
 			}
 		}
@@ -195,25 +197,26 @@ func (pa *parser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, val
 
 	v := make([]int64, len(values))
 	addValues(v)
-	pa.appendSample(p._pprof, locations, v, uint32(ref))
+	pa.appendSample(sampleType, p._pprof, locations, v, iref)
 }
 
 func (pa *parser) getProfile(sampleType int) *pprof {
-	p := pa.proftab[sampleType]
-	if nil == p {
-		p = &pprof{
-			prof: &profile_types.Profile{
-				Type:        &typetab[sampleType],
-				PayloadType: profile_types.PayloadTypePprof,
-			},
-			_pprof: &pprof_proto.Profile{},
-		}
-		pa.proftab[sampleType] = p
+	return pa.proftab[sampleType]
+}
 
-		// add sample types and units to keep the pprof valid for libraries
-		for i, typ := range p.prof.Type.SampleType {
-			pa.appendSampleType(p._pprof, typ, p.prof.Type.SampleUnit[i])
-		}
+func (pa *parser) addProfile(sampleType int) *pprof {
+	p := &pprof{
+		prof: &profile_types.Profile{
+			Type:        &typetab[sampleType],
+			PayloadType: profile_types.PayloadTypePprof,
+		},
+		_pprof: &pprof_proto.Profile{},
+	}
+	pa.proftab[sampleType] = p
+
+	// add sample types and units to keep the pprof valid for libraries
+	for i, typ := range p.prof.Type.SampleType {
+		pa.appendSampleType(p._pprof, typ, p.prof.Type.SampleUnit[i])
 	}
 	return p
 }
@@ -225,29 +228,45 @@ func (pa *parser) appendSampleType(prof *pprof_proto.Profile, typ, unit string) 
 	})
 }
 
-func (pa *parser) getSample(prof *pprof_proto.Profile, externStacktraceRef uint32) *pprof_proto.Sample {
-	idx, ok := pa.sampleMap[externStacktraceRef]
+func (pa *parser) getSample(sampleType int, prof *pprof_proto.Profile, externStacktraceRef uint32) *pprof_proto.Sample {
+	m := pa.samptab[sampleType]
+	if nil == m {
+		return nil
+	}
+	idx, ok := m[externStacktraceRef]
 	if !ok {
 		return nil
 	}
 	return prof.Sample[idx]
 }
 
-func (pa *parser) appendSample(prof *pprof_proto.Profile, locations []*pprof_proto.Location, values []int64, externStacktraceRef uint32) {
+func (pa *parser) appendSample(sampleType int, prof *pprof_proto.Profile, locations []*pprof_proto.Location, values []int64, externStacktraceRef uint32) {
 	sample := &pprof_proto.Sample{
 		Location: locations,
 		Value:    values,
 	}
-	pa.sampleMap[externStacktraceRef] = uint32(len(prof.Sample))
+	m := pa.samptab[sampleType]
+	if nil == m {
+		m = make(map[uint32]uint32)
+		pa.samptab[sampleType] = m
+	}
+	m[externStacktraceRef] = uint32(len(prof.Sample))
 	prof.Sample = append(prof.Sample, sample)
 }
 
-func (pa *parser) getLocation(externFuncId uint32) (*pprof_proto.Location, bool) {
-	loc, ok := pa.locationMap[externFuncId]
-	return loc, ok
+func (pa *parser) getLocation(sampleType int, externFuncId uint32) *pprof_proto.Location {
+	m := pa.loctab[sampleType]
+	if nil == m {
+		return nil
+	}
+	loc, ok := m[externFuncId]
+	if !ok {
+		return nil
+	}
+	return loc
 }
 
-func (pa *parser) appendLocation(prof *pprof_proto.Profile, frame string, externFuncId uint32) *pprof_proto.Location {
+func (pa *parser) appendLocation(sampleType int, prof *pprof_proto.Profile, frame string, externFuncId uint32) *pprof_proto.Location {
 	// append new function of the new location
 	newFunc := &pprof_proto.Function{
 		ID:   uint64(len(prof.Function)) + 1, // starts with 1 not 0
@@ -260,7 +279,13 @@ func (pa *parser) appendLocation(prof *pprof_proto.Profile, frame string, extern
 		ID:   uint64(len(prof.Location)) + 1, // starts with 1 not 0
 		Line: []pprof_proto.Line{{Function: newFunc}},
 	}
+
 	prof.Location = append(prof.Location, newLoc)
-	pa.locationMap[externFuncId] = newLoc
+	m := pa.loctab[sampleType]
+	if nil == m {
+		m = make(map[uint32]*pprof_proto.Location)
+		pa.loctab[sampleType] = m
+	}
+	m[externFuncId] = newLoc
 	return newLoc
 }
