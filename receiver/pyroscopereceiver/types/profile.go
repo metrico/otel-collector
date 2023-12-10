@@ -4,14 +4,17 @@ import (
 	"bytes"
 )
 
+// Enumeration of low-level payload type that are supported by the pipeline
 const (
 	PayloadTypePprof = 0
 )
 
+// Auxiliary profile meta data
 type Metadata struct {
 	SampleRateHertz uint64
 }
 
+// Represents the high-level type of a profile
 type ProfileType struct {
 	Type       string
 	PeriodType string
@@ -20,6 +23,7 @@ type ProfileType struct {
 	SampleUnit []string
 }
 
+// Parser IR for profile processing
 type ProfileIR struct {
 	Type        ProfileType
 	Payload     *bytes.Buffer

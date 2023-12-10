@@ -237,6 +237,7 @@ func handleIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeRe
 	recv.next.ConsumeLogs(ctx, logs)
 }
 
+// Starts a http server that receives profiles of supported protocols
 func (recv *pyroscopeReceiver) Start(_ context.Context, host component.Host) error {
 	recv.host = host
 	var err error
@@ -263,6 +264,7 @@ func (recv *pyroscopeReceiver) Start(_ context.Context, host component.Host) err
 	return nil
 }
 
+// Shuts down the receiver, by shutting down the server
 func (recv *pyroscopeReceiver) Shutdown(ctx context.Context) error {
 	if err := recv.httpServer.Shutdown(ctx); err != nil {
 		return fmt.Errorf("failed to shutdown: %w", err)

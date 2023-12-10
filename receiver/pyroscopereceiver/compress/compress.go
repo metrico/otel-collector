@@ -7,11 +7,13 @@ import (
 	"io"
 )
 
+// Decompresses supported formats while applying limits to avoid compression bomb
 type Decompressor struct {
 	maxDecompressedSizeBytes int64
 	decoders                 map[string]func(body io.ReadCloser) (io.ReadCloser, error)
 }
 
+// Creates new decompressor that can decompress a stream of supported formats
 func NewDecompressor(maxDecompressedSizeBytes int64) *Decompressor {
 	return &Decompressor{
 		maxDecompressedSizeBytes: maxDecompressedSizeBytes,
@@ -61,6 +63,7 @@ func (d *Decompressor) Decompress(r io.ReadCloser, encoding string) (*bytes.Buff
 	return d.readBytes(dr)
 }
 
+// Pre-allocates a buffer based on heuristics to minimize resize
 func PrepareBuffer(maxDecompressedSizeBytes int64) *bytes.Buffer {
 	var (
 		buf                      bytes.Buffer
