@@ -158,8 +158,8 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 
 func TestPyroscopeIngestJfrMemory(t *testing.T) {
 	tests := make([]jfrTest, 1)
-	allocInNewTlabPb := loadTestData(t, "memory_example_alloc_in_new_tlab.pb")
-	liveObjectPb := loadTestData(t, "memory_example_live_object.pb")
+	pbAllocInNewTlab := loadTestData(t, "memory_example_alloc_in_new_tlab.pb")
+	pbLiveObject := loadTestData(t, "memory_example_live_object.pb")
 	tests[0] = jfrTest{
 		name: "send labeled multipart form data gzipped memoty jfr to http ingest endpoint",
 		urlParams: map[string]string{
@@ -183,7 +183,7 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 				"period_unit":         "bytes",
 				"payload_type":        "0",
 			},
-			body: allocInNewTlabPb,
+			body: pbAllocInNewTlab,
 		},
 			{
 				timestamp: 1700332322,
@@ -199,7 +199,7 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 					"period_unit":         "count",
 					"payload_type":        "0",
 				},
-				body: liveObjectPb,
+				body: pbLiveObject,
 			}}),
 		err: nil,
 	}
@@ -208,6 +208,8 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 	collectorAddr := fmt.Sprintf("http://%s%s", addr, ingestPath)
 	run(t, tests, collectorAddr, sink)
 }
+
+// TODO: add block, lock, wall test cases
 
 // Returns an available local tcp port. It doesnt bind the port, and there is a race condition as
 // another process maybe bind the port before the test does
