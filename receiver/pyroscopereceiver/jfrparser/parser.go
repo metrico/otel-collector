@@ -37,7 +37,6 @@ type parser struct {
 	_pa                      *jfr_parser.Parser
 	maxDecompressedSizeBytes int64
 
-	// TODO: try lazy allocation instead of redundant array
 	proftab     [sampleTypeCount]*pprof          // <sample type, (profile, pprof)>
 	sampleMap   map[uint32]uint32                // <extern jfr stacktrace id,matching pprof sample array index>
 	locationMap map[uint32]*pprof_proto.Location // <extern jfr funcid, pprof location>
@@ -128,7 +127,7 @@ func (pa *parser) ParsePprof() ([]*profile_types.Profile, error) {
 	for _, pp := range pa.proftab {
 		if nil != pp {
 			// assuming jfr-pprof conversion should not expand memory footprint, transitively applying jfr limit on pprof
-			pp.prof.Payload = &bytes.Buffer{} // TODO: consider pre-allocate a buffer sized relatively to jfr, consider different event types for example low probability live event as part of allco profile, something better than: compress.PrepareBuffer(pa.maxDecompressedSizeBytes)
+			pp.prof.Payload = &bytes.Buffer{} // TODO: consider pre-allocate a buffer sized relatively to jfr, consider event distribution for example low probability live event as part of alloc profile, something better than: compress.PrepareBuffer(pa.maxDecompressedSizeBytes)
 			pp._pprof.WriteUncompressed(pp.prof.Payload)
 			ps = append(ps, pp.prof)
 		}
@@ -165,6 +164,16 @@ func (pa *parser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, val
 		f := st.Frames[i]
 
 		// append location that already exists
+		// TODO: fix a bug where multiple f.Method vals are mapped to same func name but creates distinct pprof func, example:
+		// function {
+		//   id: 119
+		//   name: 118
+		// }
+		// function {
+		//   id: 120
+		//   name: 118
+		// }
+		// $ cat <pb_path> | protoc --decode=perftools.profiles.Profile $HOME/go/pkg/mod/github.com/google/pprof@<version>/proto/profile.proto --proto_path $HOME/go/pkg/mod/github.com/google/pprof@<version>/proto/ >> /tmp/pprof.txt
 		loc, found := pa.getLocation(uint32(f.Method))
 		if found {
 			locations = append(locations, loc)

@@ -123,7 +123,6 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
 			rec.Attributes().PutStr(l.Name, l.Value)
 		}
 		setAttrsFromProfile(pp, &rec)
-		// TODO: consider to avoid copy in FromRaw()
 		rec.Body().SetEmptyBytes().FromRaw(pp.Payload.Bytes())
 	}
 	return &logs, nil
@@ -206,7 +205,7 @@ func getAttrsFromParams(params *url.Values) (*attrs, error) {
 		return nil, fmt.Errorf("failed to parse end time: %w", err)
 	}
 	att.end = end
-	return nil, nil
+	return &att, nil
 }
 
 func setAttrsFromProfile(prof *profile_types.Profile, rec *plog.LogRecord) {
@@ -245,7 +244,6 @@ func (recv *pyroscopeReceiver) Start(_ context.Context, host component.Host) err
 	var err error
 
 	// applies an interceptor that enforces the configured request body limit
-	// TODO: rm redundant interceptors applied by ToServer() like decompressor
 	if recv.httpServer, err = recv.conf.Protocols.Http.ToServer(host, recv.settings.TelemetrySettings, recv.httpMux); err != nil {
 		return fmt.Errorf("failed to create http server: %w", err)
 	}
