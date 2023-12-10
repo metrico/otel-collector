@@ -132,10 +132,10 @@ require (
 	github.com/prometheus/common v0.45.0
 	github.com/prometheus/prometheus v0.47.2
 	github.com/stretchr/testify v1.8.4
-	go.opentelemetry.io/collector/config/confighttp v0.89.0
-	go.opentelemetry.io/collector/consumer v0.89.0
 	go.opentelemetry.io/collector/component v0.89.0
+	go.opentelemetry.io/collector/config/confighttp v0.89.0
 	go.opentelemetry.io/collector/confmap v0.89.0
+	go.opentelemetry.io/collector/consumer v0.89.0
 	go.opentelemetry.io/collector/exporter v0.89.0
 	go.opentelemetry.io/collector/exporter/loggingexporter v0.89.0
 	go.opentelemetry.io/collector/exporter/otlpexporter v0.89.0
@@ -158,12 +158,13 @@ require (
 	google.golang.org/protobuf v1.31.0
 )
 
-require github.com/containerd/cgroups/v3 v3.0.1 // indirect
+require github.com/containerd/cgroups/v3 v3.0.2 // indirect
 
 require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/jaegerexporter v0.85.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/jaegerthrifthttpexporter v0.85.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/parquetexporter v0.87.0
+	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest v0.89.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/receiver/lokireceiver v0.89.0
 	go.opentelemetry.io/collector/connector v0.89.0
 	go.opentelemetry.io/collector/connector/forwardconnector v0.89.0
@@ -261,7 +262,6 @@ require (
 	github.com/cloudfoundry-incubator/uaago v0.0.0-20190307164349-8136b7bbe76e // indirect
 	github.com/cncf/udpa/go v0.0.0-20220112060539-c52dc94e7fbe // indirect
 	github.com/cncf/xds/go v0.0.0-20230607035331-e9ce68804cb4 // indirect
-	github.com/containerd/cgroups/v3 v3.0.2 // indirect
 	github.com/containerd/console v1.0.3 // indirect
 	github.com/containerd/ttrpc v1.2.2 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
