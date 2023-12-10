@@ -20,8 +20,8 @@ type ProfileType struct {
 	SampleUnit []string
 }
 
-type Profile struct {
-	Type        *ProfileType
+type ProfileIR struct {
+	Type        ProfileType
 	Payload     *bytes.Buffer
 	PayloadType uint32
 }

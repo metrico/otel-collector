@@ -24,26 +24,32 @@ import (
 	"go.uber.org/zap"
 )
 
-type jfrtest_t struct {
+type jfrTest struct {
 	name      string
 	urlParams map[string]string
 	jfr       string
-	expected  *plog.Logs
+	expected  plog.Logs
 	err       error
 }
 
-func loadTestData(t *testing.T, fname string) *[]byte {
-	b, err := os.ReadFile(filepath.Join("testdata", fname))
-	assert.NoError(t, err, "failed to load expected pprof payload")
-	return &b
+type profileLog struct {
+	timestamp uint64
+	body      []byte
+	attrs     map[string]any
 }
 
-func run(t *testing.T, tests *[]jfrtest_t, collectorAddr string, sink *consumertest.LogsSink) {
-	for _, tt := range *tests {
+func loadTestData(t *testing.T, filename string) []byte {
+	b, err := os.ReadFile(filepath.Join("testdata", filename))
+	assert.NoError(t, err, "failed to load expected pprof payload")
+	return b
+}
+
+func run(t *testing.T, tests []jfrTest, collectorAddr string, sink *consumertest.LogsSink) {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.NoError(t, send(t, collectorAddr, tt.urlParams, tt.jfr), "send shouldn't have been failed")
 			actual := sink.AllLogs()
-			assert.NoError(t, plogtest.CompareLogs(*tt.expected, actual[0]))
+			assert.NoError(t, plogtest.CompareLogs(tt.expected, actual[0]))
 			sink.Reset()
 		})
 	}
@@ -51,7 +57,7 @@ func run(t *testing.T, tests *[]jfrtest_t, collectorAddr string, sink *consumert
 
 func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 	addr := getAvailableLocalTcpPort(t)
-	config := &Config{
+	conf := &Config{
 		Protocols: Protocols{
 			Http: &confighttp.HTTPServerSettings{
 				Endpoint:           addr,
@@ -62,7 +68,7 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 	sink := new(consumertest.LogsSink)
 	sett := receivertest.NewNopCreateSettings()
 	sett.Logger = zap.Must(zap.NewDevelopment())
-	recv := newPyroscopeReceiver(config, sink, &sett)
+	recv := newPyroscopeReceiver(conf, sink, &sett)
 
 	require.NoError(t, recv.Start(context.Background(), componenttest.NewNopHost()))
 	t.Cleanup(func() { require.NoError(t, recv.Shutdown(context.Background())) })
@@ -115,9 +121,9 @@ func send(t *testing.T, addr string, urlParams map[string]string, jfr string) er
 }
 
 func TestPyroscopeIngestJfrCpu(t *testing.T) {
-	tests := make([]jfrtest_t, 1)
+	tests := make([]jfrTest, 1)
 	pb := loadTestData(t, "cortex-dev-01__kafka-0__cpu__0.pb")
-	tests[0] = jfrtest_t{
+	tests[0] = jfrTest{
 		name: "send labeled multipart form data gzipped cpu jfr to http ingest endpoint",
 		urlParams: map[string]string{
 			"name":       "com.example.App{dc=\"us-east-1\",kubernetes_pod_name=\"app-abcd1234\"}",
@@ -127,7 +133,7 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 			"sampleRate": "100",
 		},
 		jfr: filepath.Join("testdata", "cortex-dev-01__kafka-0__cpu__0.jfr"),
-		expected: gen([]*profile_t{{
+		expected: gen([]profileLog{{
 			timestamp: 1700332322,
 			attrs: map[string]any{
 				"__name__":            "com.example.App",
@@ -147,14 +153,14 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 	}
 	addr, sink := startHttpServer(t)
 	collectorAddr := fmt.Sprintf("http://%s%s", addr, ingestPath)
-	run(t, &tests, collectorAddr, sink)
+	run(t, tests, collectorAddr, sink)
 }
 
 func TestPyroscopeIngestJfrMemory(t *testing.T) {
-	tests := make([]jfrtest_t, 1)
+	tests := make([]jfrTest, 1)
 	allocInNewTlabPb := loadTestData(t, "memory_example_alloc_in_new_tlab.pb")
 	liveObjectPb := loadTestData(t, "memory_example_live_object.pb")
-	tests[0] = jfrtest_t{
+	tests[0] = jfrTest{
 		name: "send labeled multipart form data gzipped memoty jfr to http ingest endpoint",
 		urlParams: map[string]string{
 			"name":   "com.example.App{dc=\"us-east-1\",kubernetes_pod_name=\"app-abcd1234\"}",
@@ -163,7 +169,7 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 			"format": "jfr",
 		},
 		jfr: filepath.Join("testdata", "memory_alloc_live_example.jfr"),
-		expected: gen([]*profile_t{{
+		expected: gen([]profileLog{{
 			timestamp: 1700332322,
 			attrs: map[string]any{
 				"__name__":            "com.example.App",
@@ -200,7 +206,7 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 
 	addr, sink := startHttpServer(t)
 	collectorAddr := fmt.Sprintf("http://%s%s", addr, ingestPath)
-	run(t, &tests, collectorAddr, sink)
+	run(t, tests, collectorAddr, sink)
 }
 
 // Returns an available local tcp port. It doesnt bind the port, and there is a race condition as
@@ -214,20 +220,14 @@ func getAvailableLocalTcpPort(t *testing.T) string {
 	return l.Addr().String()
 }
 
-type profile_t struct {
-	timestamp uint64
-	body      *[]byte
-	attrs     map[string]any
-}
-
-func gen(in []*profile_t) *plog.Logs {
-	profiles := plog.NewLogs()
-	recs := profiles.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
-	for _, p := range in {
-		rec := recs.AppendEmpty()
-		_ = rec.Attributes().FromRaw(p.attrs)
-		rec.SetTimestamp(pcommon.Timestamp(p.timestamp))
-		rec.Body().SetEmptyBytes().FromRaw(*p.body)
+func gen(pl []profileLog) plog.Logs {
+	newpl := plog.NewLogs()
+	rs := newpl.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
+	for _, l := range pl {
+		r := rs.AppendEmpty()
+		_ = r.Attributes().FromRaw(l.attrs)
+		r.SetTimestamp(pcommon.Timestamp(l.timestamp))
+		r.Body().SetEmptyBytes().FromRaw(l.body)
 	}
-	return &profiles
+	return newpl
 }

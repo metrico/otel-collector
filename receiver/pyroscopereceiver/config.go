@@ -20,8 +20,8 @@ type Config struct {
 }
 
 // Checks that the receiver configuration is valid
-func (cfg *Config) Validate() error {
-	if cfg.Protocols.Http.MaxRequestBodySize < 1 {
+func (conf *Config) Validate() error {
+	if conf.Protocols.Http.MaxRequestBodySize < 1 {
 		return fmt.Errorf("max_request_body_size must be positive")
 	}
 	return nil

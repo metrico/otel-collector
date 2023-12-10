@@ -11,10 +11,6 @@ import (
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
 )
 
-type metadata struct {
-	period int64
-}
-
 const (
 	sampleTypeCpu         = 0
 	sampleTypeWall        = 1
@@ -25,19 +21,26 @@ const (
 	sampleTypeLiveObject  = 6
 
 	sampleTypeCount = 7
+
+	wall  = "wall"
+	event = "event"
 )
 
-type pprof struct {
-	prof   *profile_types.Profile
-	_pprof *pprof_proto.Profile
+type metadata struct {
+	period int64
 }
 
-type parser struct {
+type profileWrapper struct {
+	pprof *pprof_proto.Profile
+	prof  profile_types.ProfileIR
+}
+
+type jfrPprofParser struct {
 	md                       metadata
-	_pa                      *jfr_parser.Parser
+	jfrParser                *jfr_parser.Parser
 	maxDecompressedSizeBytes int64
 
-	proftab [sampleTypeCount]*pprof                           // <sample type, (profile, pprof)>
+	proftab [sampleTypeCount]*profileWrapper                  // <sample type, (profile, pprof)>
 	samptab [sampleTypeCount]map[uint32]uint32                // <extern jfr stacktrace id,matching pprof sample array index>
 	loctab  [sampleTypeCount]map[uint32]*pprof_proto.Location // <extern jfr funcid, pprof location>
 }
@@ -52,35 +55,30 @@ var typetab = []profile_types.ProfileType{
 	sampleTypeLiveObject:  {Type: "memory", PeriodType: "objects", PeriodUnit: "count", SampleType: []string{"live"}, SampleUnit: []string{"count"}},
 }
 
-const (
-	wall  = "wall"
-	event = "event"
-)
-
 // Creates a jfr parser that parse the accepted jfr buffer
-func NewJfrParser(jfr *bytes.Buffer, md profile_types.Metadata, maxDecompressedSizeBytes int64) *parser {
+func NewJfrPprofParser(jfr *bytes.Buffer, md profile_types.Metadata, maxDecompressedSizeBytes int64) *jfrPprofParser {
 	var period int64
 	if md.SampleRateHertz == 0 {
 		period = 1
 	} else {
 		period = 1e9 / int64(md.SampleRateHertz)
 	}
-	return &parser{
+	return &jfrPprofParser{
 		md:                       metadata{period: period},
-		_pa:                      jfr_parser.NewParser(jfr.Bytes(), jfr_parser.Options{SymbolProcessor: nopSymbolProcessor}),
+		jfrParser:                jfr_parser.NewParser(jfr.Bytes(), jfr_parser.Options{SymbolProcessor: nopSymbolProcessor}),
 		maxDecompressedSizeBytes: maxDecompressedSizeBytes,
 	}
 }
 
 // Parses the jfr buffer into pprof
-func (pa *parser) ParsePprof() ([]*profile_types.Profile, error) {
+func (pa *jfrPprofParser) ParsePprof() ([]profile_types.ProfileIR, error) {
 	var (
 		event  string
 		values = [2]int64{1, 0}
 	)
 
 	for {
-		t, err := pa._pa.ParseEvent()
+		t, err := pa.jfrParser.ParseEvent()
 		if err != nil {
 			if io.EOF == err {
 				break
@@ -89,44 +87,44 @@ func (pa *parser) ParsePprof() ([]*profile_types.Profile, error) {
 		}
 
 		switch t {
-		case pa._pa.TypeMap.T_EXECUTION_SAMPLE:
+		case pa.jfrParser.TypeMap.T_EXECUTION_SAMPLE:
 			values[0] = 1 * int64(pa.md.period)
-			ts := pa._pa.GetThreadState(pa._pa.ExecutionSample.State)
+			ts := pa.jfrParser.GetThreadState(pa.jfrParser.ExecutionSample.State)
 			if ts != nil && ts.Name == "STATE_RUNNABLE" {
-				pa.addStacktrace(sampleTypeCpu, pa._pa.ExecutionSample.StackTrace, values[:1])
+				pa.addStacktrace(sampleTypeCpu, pa.jfrParser.ExecutionSample.StackTrace, values[:1])
 			}
 			// TODO: this code is from github/grafana/pyroscope, need to validate that the query simulator handles this branch as expected for wall
 			if wall == event {
-				pa.addStacktrace(sampleTypeWall, pa._pa.ExecutionSample.StackTrace, values[:1])
+				pa.addStacktrace(sampleTypeWall, pa.jfrParser.ExecutionSample.StackTrace, values[:1])
 			}
-		case pa._pa.TypeMap.T_ALLOC_IN_NEW_TLAB:
-			values[1] = int64(pa._pa.ObjectAllocationInNewTLAB.TlabSize)
-			pa.addStacktrace(sampleTypeInNewTlab, pa._pa.ObjectAllocationInNewTLAB.StackTrace, values[:2])
-		case pa._pa.TypeMap.T_ALLOC_OUTSIDE_TLAB:
-			values[1] = int64(pa._pa.ObjectAllocationOutsideTLAB.AllocationSize)
-			pa.addStacktrace(sampleTypeOutsideTlab, pa._pa.ObjectAllocationOutsideTLAB.StackTrace, values[:2])
-		case pa._pa.TypeMap.T_MONITOR_ENTER:
-			values[1] = int64(pa._pa.JavaMonitorEnter.Duration)
-			pa.addStacktrace(sampleTypeLock, pa._pa.JavaMonitorEnter.StackTrace, values[:2])
-		case pa._pa.TypeMap.T_THREAD_PARK:
-			values[1] = int64(pa._pa.ThreadPark.Duration)
-			pa.addStacktrace(sampleTypeThreadPark, pa._pa.ThreadPark.StackTrace, values[:2])
-		case pa._pa.TypeMap.T_LIVE_OBJECT:
-			pa.addStacktrace(sampleTypeLiveObject, pa._pa.LiveObject.StackTrace, values[:1])
-		case pa._pa.TypeMap.T_ACTIVE_SETTING:
-			if pa._pa.ActiveSetting.Name == event {
-				event = pa._pa.ActiveSetting.Value
+		case pa.jfrParser.TypeMap.T_ALLOC_IN_NEW_TLAB:
+			values[1] = int64(pa.jfrParser.ObjectAllocationInNewTLAB.TlabSize)
+			pa.addStacktrace(sampleTypeInNewTlab, pa.jfrParser.ObjectAllocationInNewTLAB.StackTrace, values[:2])
+		case pa.jfrParser.TypeMap.T_ALLOC_OUTSIDE_TLAB:
+			values[1] = int64(pa.jfrParser.ObjectAllocationOutsideTLAB.AllocationSize)
+			pa.addStacktrace(sampleTypeOutsideTlab, pa.jfrParser.ObjectAllocationOutsideTLAB.StackTrace, values[:2])
+		case pa.jfrParser.TypeMap.T_MONITOR_ENTER:
+			values[1] = int64(pa.jfrParser.JavaMonitorEnter.Duration)
+			pa.addStacktrace(sampleTypeLock, pa.jfrParser.JavaMonitorEnter.StackTrace, values[:2])
+		case pa.jfrParser.TypeMap.T_THREAD_PARK:
+			values[1] = int64(pa.jfrParser.ThreadPark.Duration)
+			pa.addStacktrace(sampleTypeThreadPark, pa.jfrParser.ThreadPark.StackTrace, values[:2])
+		case pa.jfrParser.TypeMap.T_LIVE_OBJECT:
+			pa.addStacktrace(sampleTypeLiveObject, pa.jfrParser.LiveObject.StackTrace, values[:1])
+		case pa.jfrParser.TypeMap.T_ACTIVE_SETTING:
+			if pa.jfrParser.ActiveSetting.Name == event {
+				event = pa.jfrParser.ActiveSetting.Value
 			}
 		}
 	}
 
-	ps := make([]*profile_types.Profile, 0)
-	for _, pp := range pa.proftab {
-		if nil != pp {
+	ps := make([]profile_types.ProfileIR, 0)
+	for _, pr := range pa.proftab {
+		if nil != pr {
 			// assuming jfr-pprof conversion should not expand memory footprint, transitively applying jfr limit on pprof
-			pp.prof.Payload = &bytes.Buffer{} // TODO: consider pre-allocate a buffer sized relatively to jfr, consider event distribution for example low probability live event as part of alloc profile, something better than: compress.PrepareBuffer(pa.maxDecompressedSizeBytes)
-			pp._pprof.WriteUncompressed(pp.prof.Payload)
-			ps = append(ps, pp.prof)
+			pr.prof.Payload = &bytes.Buffer{} // TODO: consider pre-allocate a buffer sized relatively to jfr, consider event distribution for example low probability live event as part of alloc profile, something better than: compress.PrepareBuffer(pa.maxDecompressedSizeBytes)
+			pr.pprof.WriteUncompressed(pr.prof.Payload)
+			ps = append(ps, pr.prof)
 		}
 	}
 	return ps, nil
@@ -134,13 +132,13 @@ func (pa *parser) ParsePprof() ([]*profile_types.Profile, error) {
 
 func nopSymbolProcessor(ref *jfr_types.SymbolList) {}
 
-func (pa *parser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, values []int64) {
-	p := pa.getProfile(sampleType)
-	if nil == p {
-		p = pa.addProfile(sampleType)
+func (pa *jfrPprofParser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, values []int64) {
+	pr := pa.getProfile(sampleType)
+	if nil == pr {
+		pr = pa.addProfile(sampleType)
 	}
 
-	st := pa._pa.GetStacktrace(ref)
+	st := pa.jfrParser.GetStacktrace(ref)
 	if nil == st {
 		return
 	}
@@ -153,14 +151,14 @@ func (pa *parser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, val
 
 	iref := uint32(ref)
 	// sum values for a stacktrace that already exist
-	sample := pa.getSample(sampleType, p._pprof, iref)
+	sample := pa.getSample(sampleType, pr.pprof, iref)
 	if sample != nil {
 		addValues(sample.Value)
 		return
 	}
 
 	// encode a new stacktrace in pprof
-	locations := make([]*pprof_proto.Location, 0, len(st.Frames))
+	ls := make([]*pprof_proto.Location, 0, len(st.Frames))
 	for i := 0; i < len(st.Frames); i++ {
 		f := st.Frames[i]
 		imethod := uint32(f.Method)
@@ -176,71 +174,71 @@ func (pa *parser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, val
 		//   name: 118
 		// }
 		// $ cat <pb_path> | protoc --decode=perftools.profiles.Profile $HOME/go/pkg/mod/github.com/google/pprof@<version>/proto/profile.proto --proto_path $HOME/go/pkg/mod/github.com/google/pprof@<version>/proto/ >> /tmp/pprof.txt
-		loc := pa.getLocation(sampleType, imethod)
-		if loc != nil {
-			locations = append(locations, loc)
+		l := pa.getLocation(sampleType, imethod)
+		if l != nil {
+			ls = append(ls, l)
 			continue
 		}
 
 		// append new location
-		m := pa._pa.GetMethod(f.Method)
+		m := pa.jfrParser.GetMethod(f.Method)
 		if m != nil {
-			cls := pa._pa.GetClass(m.Type)
+			cls := pa.jfrParser.GetClass(m.Type)
 			if cls != nil {
-				clsName := pa._pa.GetSymbolString(cls.Name)
-				methodName := pa._pa.GetSymbolString(m.Name)
-				loc = pa.appendLocation(sampleType, p._pprof, clsName+"."+methodName, imethod)
-				locations = append(locations, loc)
+				clsName := pa.jfrParser.GetSymbolString(cls.Name)
+				methodName := pa.jfrParser.GetSymbolString(m.Name)
+				l = pa.appendLocation(sampleType, pr.pprof, clsName+"."+methodName, imethod)
+				ls = append(ls, l)
 			}
 		}
 	}
 
-	v := make([]int64, len(values))
-	addValues(v)
-	pa.appendSample(sampleType, p._pprof, locations, v, iref)
+	newv := make([]int64, len(values))
+	addValues(newv)
+	pa.appendSample(sampleType, pr.pprof, ls, newv, iref)
 }
 
-func (pa *parser) getProfile(sampleType int) *pprof {
+func (pa *jfrPprofParser) getProfile(sampleType int) *profileWrapper {
 	return pa.proftab[sampleType]
 }
 
-func (pa *parser) addProfile(sampleType int) *pprof {
-	p := &pprof{
-		prof: &profile_types.Profile{
-			Type:        &typetab[sampleType],
+func (pa *jfrPprofParser) addProfile(sampleType int) *profileWrapper {
+	pw := &profileWrapper{
+		prof: profile_types.ProfileIR{
+			Type:        typetab[sampleType],
 			PayloadType: profile_types.PayloadTypePprof,
 		},
-		_pprof: &pprof_proto.Profile{},
+		pprof: &pprof_proto.Profile{},
 	}
-	pa.proftab[sampleType] = p
+	pa.proftab[sampleType] = pw
 
 	// add sample types and units to keep the pprof valid for libraries
-	for i, typ := range p.prof.Type.SampleType {
-		pa.appendSampleType(p._pprof, typ, p.prof.Type.SampleUnit[i])
+	for i, t := range pw.prof.Type.SampleType {
+		pa.appendSampleType(pw.pprof, t, pw.prof.Type.SampleUnit[i])
 	}
-	return p
+	return pw
 }
 
-func (pa *parser) appendSampleType(prof *pprof_proto.Profile, typ, unit string) {
+func (pa *jfrPprofParser) appendSampleType(prof *pprof_proto.Profile, typ, unit string) {
 	prof.SampleType = append(prof.SampleType, &pprof_proto.ValueType{
 		Type: typ,
 		Unit: unit,
 	})
 }
 
-func (pa *parser) getSample(sampleType int, prof *pprof_proto.Profile, externStacktraceRef uint32) *pprof_proto.Sample {
+func (pa *jfrPprofParser) getSample(sampleType int, prof *pprof_proto.Profile, externStacktraceRef uint32) *pprof_proto.Sample {
 	m := pa.samptab[sampleType]
 	if nil == m {
 		return nil
 	}
-	idx, ok := m[externStacktraceRef]
+	i, ok := m[externStacktraceRef]
 	if !ok {
 		return nil
 	}
-	return prof.Sample[idx]
+	return prof.Sample[i]
 }
 
-func (pa *parser) appendSample(sampleType int, prof *pprof_proto.Profile, locations []*pprof_proto.Location, values []int64, externStacktraceRef uint32) {
+func (pa *jfrPprofParser) appendSample(sampleType int, prof *pprof_proto.Profile, locations []*pprof_proto.Location, values []int64, externStacktraceRef uint32) {
 	sample := &pprof_proto.Sample{
 		Location: locations,
 		Value:    values,
@@ -254,38 +252,38 @@ func (pa *parser) appendSample(sampleType int, prof *pprof_proto.Profile, locati
 	prof.Sample = append(prof.Sample, sample)
 }
 
-func (pa *parser) getLocation(sampleType int, externFuncId uint32) *pprof_proto.Location {
+func (pa *jfrPprofParser) getLocation(sampleType int, externFuncId uint32) *pprof_proto.Location {
 	m := pa.loctab[sampleType]
 	if nil == m {
 		return nil
 	}
-	loc, ok := m[externFuncId]
+	l, ok := m[externFuncId]
 	if !ok {
 		return nil
 	}
-	return loc
+	return l
 }
 
-func (pa *parser) appendLocation(sampleType int, prof *pprof_proto.Profile, frame string, externFuncId uint32) *pprof_proto.Location {
+func (pa *jfrPprofParser) appendLocation(sampleType int, prof *pprof_proto.Profile, frame string, externFuncId uint32) *pprof_proto.Location {
 	// append new function of the new location
-	newFunc := &pprof_proto.Function{
+	newf := &pprof_proto.Function{
 		ID:   uint64(len(prof.Function)) + 1, // starts with 1 not 0
 		Name: frame,
 	}
-	prof.Function = append(prof.Function, newFunc)
+	prof.Function = append(prof.Function, newf)
 
 	// append new location with a single line referencing the new function, ignoring inlining without a line number
-	newLoc := &pprof_proto.Location{
+	newl := &pprof_proto.Location{
 		ID:   uint64(len(prof.Location)) + 1, // starts with 1 not 0
-		Line: []pprof_proto.Line{{Function: newFunc}},
+		Line: []pprof_proto.Line{{Function: newf}},
 	}
 
-	prof.Location = append(prof.Location, newLoc)
+	prof.Location = append(prof.Location, newl)
 	m := pa.loctab[sampleType]
 	if nil == m {
 		m = make(map[uint32]*pprof_proto.Location)
 		pa.loctab[sampleType] = m
 	}
-	m[externFuncId] = newLoc
-	return newLoc
+	m[externFuncId] = newl
+	return newl
 }

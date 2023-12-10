@@ -15,7 +15,6 @@ import (
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/compress"
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
-
 	"github.com/prometheus/prometheus/model/labels"
 	promql_parser "github.com/prometheus/prometheus/promql/parser"
 	"go.opentelemetry.io/collector/component"
@@ -45,9 +44,16 @@ type pyroscopeReceiver struct {
 	shutdownWg   sync.WaitGroup
 }
 
-func newPyroscopeReceiver(baseCfg *Config, consumer consumer.Logs, params *receiver.CreateSettings) *pyroscopeReceiver {
+type attrs struct {
+	start  uint64
+	end    uint64
+	name   string
+	labels labels.Labels
+}
+
+func newPyroscopeReceiver(conf *Config, consumer consumer.Logs, params *receiver.CreateSettings) *pyroscopeReceiver {
 	recv := &pyroscopeReceiver{
-		conf:     baseCfg,
+		conf:     conf,
 		next:     consumer,
 		settings: params,
 		logger:   params.Logger,
@@ -60,14 +66,7 @@ func newPyroscopeReceiver(baseCfg *Config, consumer consumer.Logs, params *recei
 	return recv
 }
 
-type attrs struct {
-	start  uint64
-	end    uint64
-	name   string
-	labels *labels.Labels
-}
-
-func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
+func parse(req *http.Request, recv *pyroscopeReceiver) (plog.Logs, error) {
 	var (
 		tmp []string
 		ok  bool
@@ -77,24 +76,24 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
 	params := req.URL.Query()
 	// support jfr only
 	if tmp, ok = params["format"]; !ok || tmp[0] != "jfr" {
-		return &logs, fmt.Errorf("unsupported format, supported: [jfr]")
+		return logs, fmt.Errorf("unsupported format, supported: [jfr]")
 	}
 
-	attrs, err := getAttrsFromParams(&params)
+	att, err := getAttrsFromParams(&params)
 	if err != nil {
-		return &logs, err
+		return logs, err
 	}
 
 	// support only multipart/form-data
-	file, err := recv.openMultipartJfr(req)
+	f, err := recv.openMultipartJfr(req)
 	if err != nil {
-		return &logs, err
+		return logs, err
 	}
-	defer file.Close()
+	defer f.Close()
 
-	buf, err := recv.decompressor.Decompress(file, "gzip")
+	buf, err := recv.decompressor.Decompress(f, "gzip")
 	if err != nil {
-		return &logs, fmt.Errorf("failed to decompress body: %w", err)
+		return logs, fmt.Errorf("failed to decompress body: %w", err)
 	}
 	resetHeaders(req)
 
@@ -103,41 +102,41 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (*plog.Logs, error) {
 	if ok {
 		hz, err := strconv.ParseUint(tmp[0], 10, 64)
 		if err != nil {
-			return &logs, fmt.Errorf("failed to parse rate: %w", err)
+			return logs, fmt.Errorf("failed to parse rate: %w", err)
 		}
 		md.SampleRateHertz = hz
 	}
 
-	ps, err := jfrparser.NewJfrParser(buf, md, recv.conf.Protocols.Http.MaxRequestBodySize).ParsePprof()
+	ps, err := jfrparser.NewJfrPprofParser(buf, md, recv.conf.Protocols.Http.MaxRequestBodySize).ParsePprof()
 	if err != nil {
-		return &logs, fmt.Errorf("failed to parse pprof: %w", err)
+		return logs, fmt.Errorf("failed to parse pprof: %w", err)
 	}
 
-	recs := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
-	for _, pp := range ps {
-		rec := recs.AppendEmpty()
-		rec.SetTimestamp(pcommon.Timestamp(attrs.start))
-		rec.Attributes().PutStr("duration_ns", fmt.Sprint((attrs.end-attrs.start)*1e9))
-		rec.Attributes().PutStr(nameLabel, attrs.name)
-		for _, l := range *attrs.labels {
-			rec.Attributes().PutStr(l.Name, l.Value)
+	rs := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
+	for _, pr := range ps {
+		r := rs.AppendEmpty()
+		r.SetTimestamp(pcommon.Timestamp(att.start))
+		r.Attributes().PutStr("duration_ns", fmt.Sprint((att.end-att.start)*1e9))
+		r.Attributes().PutStr(nameLabel, att.name)
+		for _, l := range att.labels {
+			r.Attributes().PutStr(l.Name, l.Value)
 		}
-		setAttrsFromProfile(pp, &rec)
-		rec.Body().SetEmptyBytes().FromRaw(pp.Payload.Bytes())
+		setAttrsFromProfile(pr, r)
+		r.Body().SetEmptyBytes().FromRaw(pr.Payload.Bytes())
 	}
-	return &logs, nil
+	return logs, nil
 }
 
-func (d *pyroscopeReceiver) openMultipartJfr(unparsed *http.Request) (multipart.File, error) {
-	if err := unparsed.ParseMultipartForm(d.conf.Protocols.Http.MaxRequestBodySize); err != nil {
+func (recv *pyroscopeReceiver) openMultipartJfr(req *http.Request) (multipart.File, error) {
+	if err := req.ParseMultipartForm(recv.conf.Protocols.Http.MaxRequestBodySize); err != nil {
 		return nil, fmt.Errorf("failed to parse multipart request: %w", err)
 	}
-	multipartForm := unparsed.MultipartForm
+	mf := req.MultipartForm
 	defer func() {
-		_ = multipartForm.RemoveAll()
+		_ = mf.RemoveAll()
 	}()
 
-	part, ok := multipartForm.File[jfrFormat]
+	part, ok := mf.File[jfrFormat]
 	if !ok {
 		return nil, fmt.Errorf("required jfr part is missing")
 	}
@@ -161,25 +160,25 @@ func resetHeaders(req *http.Request) {
 	req.ContentLength = -1
 }
 
-func getAttrsFromParams(params *url.Values) (*attrs, error) {
+func getAttrsFromParams(params *url.Values) (attrs, error) {
 	var (
-		tmp     []string
-		ok      bool
-		paramsv       = *params
-		att     attrs = attrs{}
+		tmp []string
+		ok  bool
+		pv        = *params
+		att attrs = attrs{}
 	)
 
-	if tmp, ok = paramsv["from"]; !ok {
-		return nil, fmt.Errorf("required start time is missing")
+	if tmp, ok = pv["from"]; !ok {
+		return att, fmt.Errorf("required start time is missing")
 	}
 	start, err := strconv.ParseUint(tmp[0], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse start time: %w", err)
+		return att, fmt.Errorf("failed to parse start time: %w", err)
 	}
 	att.start = start
 
-	if tmp, ok = paramsv["name"]; !ok {
-		return nil, fmt.Errorf("required labels are missing")
+	if tmp, ok = pv["name"]; !ok {
+		return att, fmt.Errorf("required labels are missing")
 	}
 	i := strings.Index(tmp[0], "{")
 	length := len(tmp[0])
@@ -189,26 +188,25 @@ func getAttrsFromParams(params *url.Values) (*attrs, error) {
 		promql := tmp[0][i:length]
 		labels, err := promql_parser.ParseMetric(promql)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse labels: %w", err)
+			return att, fmt.Errorf("failed to parse labels: %w", err)
 		}
-		att.labels = &labels
+		att.labels = labels
 	}
 	// required app name
-	name := tmp[0][:i]
-	att.name = name
+	att.name = tmp[0][:i]
 
-	if tmp, ok = paramsv["until"]; !ok {
-		return nil, fmt.Errorf("required end time is missing")
+	if tmp, ok = pv["until"]; !ok {
+		return att, fmt.Errorf("required end time is missing")
 	}
 	end, err := strconv.ParseUint(tmp[0], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse end time: %w", err)
+		return att, fmt.Errorf("failed to parse end time: %w", err)
 	}
 	att.end = end
-	return &att, nil
+	return att, nil
 }
 
-func setAttrsFromProfile(prof *profile_types.Profile, rec *plog.LogRecord) {
+func setAttrsFromProfile(prof profile_types.ProfileIR, rec plog.LogRecord) {
 	rec.Attributes().PutStr("type", prof.Type.Type)
 	rec.Attributes().PutStr("sample_type", strings.Join(prof.Type.SampleType, ","))
 	rec.Attributes().PutStr("sample_unit", strings.Join(prof.Type.SampleUnit, ","))
@@ -236,7 +234,7 @@ func handleIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeRe
 
 	// delegate to next consumer in the pipeline
 	// TODO: support memorylimiter processor, apply retry policy on "oom", and consider to shift right allocs from the receiver
-	recv.next.ConsumeLogs(ctx, *logs)
+	recv.next.ConsumeLogs(ctx, logs)
 }
 
 func (recv *pyroscopeReceiver) Start(_ context.Context, host component.Host) error {
@@ -249,8 +247,8 @@ func (recv *pyroscopeReceiver) Start(_ context.Context, host component.Host) err
 	}
 
 	recv.logger.Info("server listening on", zap.String("endpoint", recv.conf.Protocols.Http.Endpoint))
-	var listener net.Listener
-	if listener, err = recv.conf.Protocols.Http.ToListener(); err != nil {
+	var l net.Listener
+	if l, err = recv.conf.Protocols.Http.ToListener(); err != nil {
 		return fmt.Errorf("failed to create tcp listener: %w", err)
 	}
 
@@ -258,7 +256,7 @@ func (recv *pyroscopeReceiver) Start(_ context.Context, host component.Host) err
 	recv.shutdownWg.Add(1)
 	go func() {
 		defer recv.shutdownWg.Done()
-		if err := recv.httpServer.Serve(listener); !errors.Is(err, http.ErrServerClosed) && err != nil {
+		if err := recv.httpServer.Serve(l); !errors.Is(err, http.ErrServerClosed) && err != nil {
 			host.ReportFatalError(err)
 		}
 	}()
