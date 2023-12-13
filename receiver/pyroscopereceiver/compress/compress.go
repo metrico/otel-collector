@@ -7,18 +7,24 @@ import (
 	"io"
 )
 
-// Decompresses supported formats while applying limits to avoid compression bomb
+type codec uint8
+
+const (
+	Gzip codec = iota
+)
+
+// Decodes compressed streams
 type Decompressor struct {
 	maxDecompressedSizeBytes int64
-	decoders                 map[string]func(body io.ReadCloser) (io.ReadCloser, error)
+	decoders                 map[codec]func(body io.ReadCloser) (io.ReadCloser, error)
 }
 
-// Creates new decompressor that can decompress a stream of supported formats
+// Creates a new decompressor
 func NewDecompressor(maxDecompressedSizeBytes int64) *Decompressor {
 	return &Decompressor{
 		maxDecompressedSizeBytes: maxDecompressedSizeBytes,
-		decoders: map[string]func(r io.ReadCloser) (io.ReadCloser, error){
-			"gzip": func(r io.ReadCloser) (io.ReadCloser, error) {
+		decoders: map[codec]func(r io.ReadCloser) (io.ReadCloser, error){
+			Gzip: func(r io.ReadCloser) (io.ReadCloser, error) {
 				gr, err := gzip.NewReader(r)
 				if err != nil {
 					return nil, err
@@ -48,9 +54,9 @@ func (d *Decompressor) readBytes(r io.ReadCloser) (*bytes.Buffer, error) {
 	return buf, nil
 }
 
-// Reads and decompresses the accepted reader, applying the configured decompressed size limit
-func (d *Decompressor) Decompress(r io.ReadCloser, encoding string) (*bytes.Buffer, error) {
-	decoder, ok := d.decoders[encoding]
+// Decodes the accepted reader, applying the configured size limit to avoid oom by compression bomb
+func (d *Decompressor) Decompress(r io.ReadCloser, c codec) (*bytes.Buffer, error) {
+	decoder, ok := d.decoders[c]
 	if !ok {
 		return nil, fmt.Errorf("unsupported encoding")
 	}

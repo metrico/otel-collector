@@ -91,7 +91,7 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (plog.Logs, error) {
 	}
 	defer f.Close()
 
-	buf, err := recv.decompressor.Decompress(f, "gzip")
+	buf, err := recv.decompressor.Decompress(f, compress.Gzip)
 	if err != nil {
 		return logs, fmt.Errorf("failed to decompress body: %w", err)
 	}
@@ -234,7 +234,13 @@ func handleIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeRe
 
 	// delegate to next consumer in the pipeline
 	// TODO: support memorylimiter processor, apply retry policy on "oom", and consider to shift right allocs from the receiver
-	recv.next.ConsumeLogs(ctx, logs)
+	err = recv.next.ConsumeLogs(ctx, logs)
+	if err != nil {
+		msg := err.Error()
+		recv.logger.Error(msg)
+		writeResponse(resp, "text/plain", http.StatusInternalServerError, []byte(msg))
+		return
+	}
 }
 
 // Starts a http server that receives profiles of supported protocols

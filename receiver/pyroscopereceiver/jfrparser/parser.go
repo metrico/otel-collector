@@ -11,19 +11,18 @@ import (
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
 )
 
+type sampleType uint8
+
 const (
-	sampleTypeCpu         = 0
-	sampleTypeWall        = 1
-	sampleTypeInNewTlab   = 2
-	sampleTypeOutsideTlab = 3
-	sampleTypeLock        = 4
-	sampleTypeThreadPark  = 5
-	sampleTypeLiveObject  = 6
+	sampleTypeCpu sampleType = iota
+	sampleTypeWall
+	sampleTypeInNewTlab
+	sampleTypeOutsideTlab
+	sampleTypeLock
+	sampleTypeThreadPark
+	sampleTypeLiveObject
 
-	sampleTypeCount = 7
-
-	wall  = "wall"
-	event = "event"
+	sampleTypeCount
 )
 
 type metadata struct {
@@ -94,7 +93,7 @@ func (pa *jfrPprofParser) ParsePprof() ([]profile_types.ProfileIR, error) {
 				pa.addStacktrace(sampleTypeCpu, pa.jfrParser.ExecutionSample.StackTrace, values[:1])
 			}
 			// TODO: this code is from github/grafana/pyroscope, need to validate that the query simulator handles this branch as expected for wall
-			if wall == event {
+			if event == "wall" {
 				pa.addStacktrace(sampleTypeWall, pa.jfrParser.ExecutionSample.StackTrace, values[:1])
 			}
 		case pa.jfrParser.TypeMap.T_ALLOC_IN_NEW_TLAB:
@@ -112,7 +111,7 @@ func (pa *jfrPprofParser) ParsePprof() ([]profile_types.ProfileIR, error) {
 		case pa.jfrParser.TypeMap.T_LIVE_OBJECT:
 			pa.addStacktrace(sampleTypeLiveObject, pa.jfrParser.LiveObject.StackTrace, values[:1])
 		case pa.jfrParser.TypeMap.T_ACTIVE_SETTING:
-			if pa.jfrParser.ActiveSetting.Name == event {
+			if pa.jfrParser.ActiveSetting.Name == "event" {
 				event = pa.jfrParser.ActiveSetting.Value
 			}
 		}
@@ -132,7 +131,7 @@ func (pa *jfrPprofParser) ParsePprof() ([]profile_types.ProfileIR, error) {
 
 func nopSymbolProcessor(ref *jfr_types.SymbolList) {}
 
-func (pa *jfrPprofParser) addStacktrace(sampleType int, ref jfr_types.StackTraceRef, values []int64) {
+func (pa *jfrPprofParser) addStacktrace(sampleType sampleType, ref jfr_types.StackTraceRef, values []int64) {
 	pr := pa.getProfile(sampleType)
 	if nil == pr {
 		pr = pa.addProfile(sampleType)
@@ -198,11 +197,11 @@ func (pa *jfrPprofParser) addStacktrace(sampleType int, ref jfr_types.StackTrace
 	pa.appendSample(sampleType, pr.pprof, ls, newv, iref)
 }
 
-func (pa *jfrPprofParser) getProfile(sampleType int) *profileWrapper {
+func (pa *jfrPprofParser) getProfile(sampleType sampleType) *profileWrapper {
 	return pa.proftab[sampleType]
 }
 
-func (pa *jfrPprofParser) addProfile(sampleType int) *profileWrapper {
+func (pa *jfrPprofParser) addProfile(sampleType sampleType) *profileWrapper {
 	pw := &profileWrapper{
 		prof: profile_types.ProfileIR{
 			Type:        typetab[sampleType],
@@ -226,7 +225,7 @@ func (pa *jfrPprofParser) appendSampleType(prof *pprof_proto.Profile, typ, unit 
 	})
 }
 
-func (pa *jfrPprofParser) getSample(sampleType int, prof *pprof_proto.Profile, externStacktraceRef uint32) *pprof_proto.Sample {
+func (pa *jfrPprofParser) getSample(sampleType sampleType, prof *pprof_proto.Profile, externStacktraceRef uint32) *pprof_proto.Sample {
 	m := pa.samptab[sampleType]
 	if nil == m {
 		return nil
@@ -238,7 +237,7 @@ func (pa *jfrPprofParser) getSample(sampleType int, prof *pprof_proto.Profile, e
 	return prof.Sample[i]
 }
 
-func (pa *jfrPprofParser) appendSample(sampleType int, prof *pprof_proto.Profile, locations []*pprof_proto.Location, values []int64, externStacktraceRef uint32) {
+func (pa *jfrPprofParser) appendSample(sampleType sampleType, prof *pprof_proto.Profile, locations []*pprof_proto.Location, values []int64, externStacktraceRef uint32) {
 	sample := &pprof_proto.Sample{
 		Location: locations,
 		Value:    values,
@@ -252,7 +251,7 @@ func (pa *jfrPprofParser) appendSample(sampleType int, prof *pprof_proto.Profile
 	prof.Sample = append(prof.Sample, sample)
 }
 
-func (pa *jfrPprofParser) getLocation(sampleType int, externFuncId uint32) *pprof_proto.Location {
+func (pa *jfrPprofParser) getLocation(sampleType sampleType, externFuncId uint32) *pprof_proto.Location {
 	m := pa.loctab[sampleType]
 	if nil == m {
 		return nil
@@ -264,7 +263,7 @@ func (pa *jfrPprofParser) getLocation(sampleType int, externFuncId uint32) *ppro
 	return l
 }
 
-func (pa *jfrPprofParser) appendLocation(sampleType int, prof *pprof_proto.Profile, frame string, externFuncId uint32) *pprof_proto.Location {
+func (pa *jfrPprofParser) appendLocation(sampleType sampleType, prof *pprof_proto.Profile, frame string, externFuncId uint32) *pprof_proto.Location {
 	// append new function of the new location
 	newf := &pprof_proto.Function{
 		ID:   uint64(len(prof.Function)) + 1, // starts with 1 not 0
