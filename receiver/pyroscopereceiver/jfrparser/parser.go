@@ -25,19 +25,13 @@ const (
 	sampleTypeCount
 )
 
-type metadata struct {
-	period int64
-}
-
 type profileWrapper struct {
 	pprof *pprof_proto.Profile
 	prof  profile_types.ProfileIR
 }
 
 type jfrPprofParser struct {
-	md                       metadata
-	jfrParser                *jfr_parser.Parser
-	maxDecompressedSizeBytes int64
+	jfrParser *jfr_parser.Parser
 
 	proftab [sampleTypeCount]*profileWrapper                  // <sample type, (profile, pprof)>
 	samptab [sampleTypeCount]map[uint32]uint32                // <extern jfr stacktrace id,matching pprof sample array index>
@@ -55,26 +49,25 @@ var typetab = []profile_types.ProfileType{
 }
 
 // Creates a jfr parser that parse the accepted jfr buffer
-func NewJfrPprofParser(jfr *bytes.Buffer, md profile_types.Metadata, maxDecompressedSizeBytes int64) *jfrPprofParser {
-	var period int64
+func NewJfrPprofParser() *jfrPprofParser {
+	return &jfrPprofParser{}
+}
+
+// Parses the jfr buffer into pprof
+func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata, maxDecompressedSizeBytes int64) ([]profile_types.ProfileIR, error) {
+	var (
+		period int64
+		event  string
+		values = [2]int64{1, 0}
+	)
+
+	pa.jfrParser = jfr_parser.NewParser(jfr.Bytes(), jfr_parser.Options{SymbolProcessor: nopSymbolProcessor})
+
 	if md.SampleRateHertz == 0 {
 		period = 1
 	} else {
 		period = 1e9 / int64(md.SampleRateHertz)
 	}
-	return &jfrPprofParser{
-		md:                       metadata{period: period},
-		jfrParser:                jfr_parser.NewParser(jfr.Bytes(), jfr_parser.Options{SymbolProcessor: nopSymbolProcessor}),
-		maxDecompressedSizeBytes: maxDecompressedSizeBytes,
-	}
-}
-
-// Parses the jfr buffer into pprof
-func (pa *jfrPprofParser) ParsePprof() ([]profile_types.ProfileIR, error) {
-	var (
-		event  string
-		values = [2]int64{1, 0}
-	)
 
 	for {
 		t, err := pa.jfrParser.ParseEvent()
@@ -87,7 +80,7 @@ func (pa *jfrPprofParser) ParsePprof() ([]profile_types.ProfileIR, error) {
 
 		switch t {
 		case pa.jfrParser.TypeMap.T_EXECUTION_SAMPLE:
-			values[0] = 1 * int64(pa.md.period)
+			values[0] = 1 * int64(period)
 			ts := pa.jfrParser.GetThreadState(pa.jfrParser.ExecutionSample.State)
 			if ts != nil && ts.Name == "STATE_RUNNABLE" {
 				pa.addStacktrace(sampleTypeCpu, pa.jfrParser.ExecutionSample.StackTrace, values[:1])

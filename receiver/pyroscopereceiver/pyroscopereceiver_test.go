@@ -57,7 +57,7 @@ func run(t *testing.T, tests []jfrTest, collectorAddr string, sink *consumertest
 
 func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 	addr := getAvailableLocalTcpPort(t)
-	conf := &Config{
+	cfg := &Config{
 		Protocols: Protocols{
 			Http: &confighttp.HTTPServerSettings{
 				Endpoint:           addr,
@@ -66,9 +66,9 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 		},
 	}
 	sink := new(consumertest.LogsSink)
-	sett := receivertest.NewNopCreateSettings()
-	sett.Logger = zap.Must(zap.NewDevelopment())
-	recv := newPyroscopeReceiver(conf, sink, &sett)
+	set := receivertest.NewNopCreateSettings()
+	set.Logger = zap.Must(zap.NewDevelopment())
+	recv := newPyroscopeReceiver(cfg, sink, &set)
 
 	require.NoError(t, recv.Start(context.Background(), componenttest.NewNopHost()))
 	t.Cleanup(func() { require.NoError(t, recv.Shutdown(context.Background())) })
@@ -136,13 +136,11 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 		expected: gen([]profileLog{{
 			timestamp: 1700332322,
 			attrs: map[string]any{
-				"__name__":            "com.example.App",
+				"service_name":        "com.example.App",
 				"dc":                  "us-east-1",
 				"kubernetes_pod_name": "app-abcd1234",
 				"duration_ns":         "7000000000",
 				"type":                "process_cpu",
-				"sample_type":         "cpu",
-				"sample_unit":         "nanoseconds",
 				"period_type":         "cpu",
 				"period_unit":         "nanoseconds",
 				"payload_type":        "0",
@@ -172,13 +170,11 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 		expected: gen([]profileLog{{
 			timestamp: 1700332322,
 			attrs: map[string]any{
-				"__name__":            "com.example.App",
+				"service_name":        "com.example.App",
 				"dc":                  "us-east-1",
 				"kubernetes_pod_name": "app-abcd1234",
 				"duration_ns":         "7000000000",
 				"type":                "memory",
-				"sample_type":         "alloc_in_new_tlab_objects,alloc_in_new_tlab_bytes",
-				"sample_unit":         "count,bytes",
 				"period_type":         "space",
 				"period_unit":         "bytes",
 				"payload_type":        "0",
@@ -188,13 +184,11 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 			{
 				timestamp: 1700332322,
 				attrs: map[string]any{
-					"__name__":            "com.example.App",
+					"service_name":        "com.example.App",
 					"dc":                  "us-east-1",
 					"kubernetes_pod_name": "app-abcd1234",
 					"duration_ns":         "7000000000",
 					"type":                "memory",
-					"sample_type":         "live",
-					"sample_unit":         "count",
 					"period_type":         "objects",
 					"period_unit":         "count",
 					"payload_type":        "0",

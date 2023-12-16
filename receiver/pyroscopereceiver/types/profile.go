@@ -9,7 +9,7 @@ const (
 	PayloadTypePprof = 0
 )
 
-// Auxiliary profile meta data
+// Auxiliary profile metadata
 type Metadata struct {
 	SampleRateHertz uint64
 }

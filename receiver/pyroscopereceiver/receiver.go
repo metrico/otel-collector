@@ -1,6 +1,7 @@
 package pyroscopereceiver
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -27,21 +28,25 @@ import (
 
 const (
 	ingestPath = "/ingest"
-	nameLabel  = "__name__"
 	formatJfr  = "jfr"
 )
 
 type pyroscopeReceiver struct {
-	conf     *Config
-	next     consumer.Logs
-	settings *receiver.CreateSettings
-	logger   *zap.Logger
-	host     component.Host
+	cfg    *Config
+	next   consumer.Logs
+	set    *receiver.CreateSettings
+	logger *zap.Logger
+	host   component.Host
 
 	httpMux      *http.ServeMux
 	decompressor *compress.Decompressor
 	httpServer   *http.Server
 	shutdownWg   sync.WaitGroup
+}
+
+type parser interface {
+	// Parses the given input buffer into the collector's profile IR
+	Parse(buf *bytes.Buffer, md profile_types.Metadata, maxDecompressedSizeBytes int64) ([]profile_types.ProfileIR, error)
 }
 
 type attrs struct {
@@ -51,14 +56,14 @@ type attrs struct {
 	labels labels.Labels
 }
 
-func newPyroscopeReceiver(conf *Config, consumer consumer.Logs, params *receiver.CreateSettings) *pyroscopeReceiver {
+func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.CreateSettings) *pyroscopeReceiver {
 	recv := &pyroscopeReceiver{
-		conf:     conf,
-		next:     consumer,
-		settings: params,
-		logger:   params.Logger,
+		cfg:    cfg,
+		next:   consumer,
+		set:    set,
+		logger: set.Logger,
 	}
-	recv.decompressor = compress.NewDecompressor(recv.conf.Protocols.Http.MaxRequestBodySize)
+	recv.decompressor = compress.NewDecompressor(recv.cfg.Protocols.Http.MaxRequestBodySize)
 	recv.httpMux = http.NewServeMux()
 	recv.httpMux.HandleFunc(ingestPath, func(resp http.ResponseWriter, req *http.Request) {
 		handleIngest(resp, req, recv)
@@ -70,12 +75,14 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (plog.Logs, error) {
 	var (
 		tmp []string
 		ok  bool
+		pa  parser
 	)
 	logs := plog.NewLogs()
 
 	params := req.URL.Query()
-	// support jfr only
-	if tmp, ok = params["format"]; !ok || tmp[0] != "jfr" {
+	if tmp, ok = params["format"]; ok && tmp[0] == "jfr" {
+		pa = jfrparser.NewJfrPprofParser()
+	} else {
 		return logs, fmt.Errorf("unsupported format, supported: [jfr]")
 	}
 
@@ -107,7 +114,7 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (plog.Logs, error) {
 		md.SampleRateHertz = hz
 	}
 
-	ps, err := jfrparser.NewJfrPprofParser(buf, md, recv.conf.Protocols.Http.MaxRequestBodySize).ParsePprof()
+	ps, err := pa.Parse(buf, md, recv.cfg.Protocols.Http.MaxRequestBodySize)
 	if err != nil {
 		return logs, fmt.Errorf("failed to parse pprof: %w", err)
 	}
@@ -116,19 +123,21 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (plog.Logs, error) {
 	for _, pr := range ps {
 		r := rs.AppendEmpty()
 		r.SetTimestamp(pcommon.Timestamp(att.start))
-		r.Attributes().PutStr("duration_ns", fmt.Sprint((att.end-att.start)*1e9))
-		r.Attributes().PutStr(nameLabel, att.name)
+		m := r.Attributes()
+		m.PutStr("duration_ns", fmt.Sprint((att.end-att.start)*1e9))
+		m.PutStr("service_name", att.name)
+		tm := m.PutEmptyMap("tags")
 		for _, l := range att.labels {
-			r.Attributes().PutStr(l.Name, l.Value)
+			tm.PutStr(l.Name, l.Value)
 		}
-		setAttrsFromProfile(pr, r)
+		setAttrsFromProfile(pr, m)
 		r.Body().SetEmptyBytes().FromRaw(pr.Payload.Bytes())
 	}
 	return logs, nil
 }
 
 func (recv *pyroscopeReceiver) openMultipartJfr(req *http.Request) (multipart.File, error) {
-	if err := req.ParseMultipartForm(recv.conf.Protocols.Http.MaxRequestBodySize); err != nil {
+	if err := req.ParseMultipartForm(recv.cfg.Protocols.Http.MaxRequestBodySize); err != nil {
 		return nil, fmt.Errorf("failed to parse multipart request: %w", err)
 	}
 	mf := req.MultipartForm
@@ -206,13 +215,11 @@ func getAttrsFromParams(params *url.Values) (attrs, error) {
 	return att, nil
 }
 
-func setAttrsFromProfile(prof profile_types.ProfileIR, rec plog.LogRecord) {
-	rec.Attributes().PutStr("type", prof.Type.Type)
-	rec.Attributes().PutStr("sample_type", strings.Join(prof.Type.SampleType, ","))
-	rec.Attributes().PutStr("sample_unit", strings.Join(prof.Type.SampleUnit, ","))
-	rec.Attributes().PutStr("period_type", prof.Type.PeriodType)
-	rec.Attributes().PutStr("period_unit", prof.Type.PeriodUnit)
-	rec.Attributes().PutStr("payload_type", fmt.Sprint(prof.PayloadType))
+func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) {
+	m.PutStr("type", prof.Type.Type)
+	m.PutStr("period_type", prof.Type.PeriodType)
+	m.PutStr("period_unit", prof.Type.PeriodUnit)
+	m.PutStr("payload_type", fmt.Sprint(prof.PayloadType))
 }
 
 func handleIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeReceiver) {
@@ -249,17 +256,17 @@ func (recv *pyroscopeReceiver) Start(_ context.Context, host component.Host) err
 	var err error
 
 	// applies an interceptor that enforces the configured request body limit
-	if recv.httpServer, err = recv.conf.Protocols.Http.ToServer(host, recv.settings.TelemetrySettings, recv.httpMux); err != nil {
+	if recv.httpServer, err = recv.cfg.Protocols.Http.ToServer(host, recv.set.TelemetrySettings, recv.httpMux); err != nil {
 		return fmt.Errorf("failed to create http server: %w", err)
 	}
 
-	recv.logger.Info("server listening on", zap.String("endpoint", recv.conf.Protocols.Http.Endpoint))
+	recv.logger.Info("server listening on", zap.String("endpoint", recv.cfg.Protocols.Http.Endpoint))
 	var l net.Listener
-	if l, err = recv.conf.Protocols.Http.ToListener(); err != nil {
+	if l, err = recv.cfg.Protocols.Http.ToListener(); err != nil {
 		return fmt.Errorf("failed to create tcp listener: %w", err)
 	}
 
-	// TODO: rate limit clients
+	// TODO: rate limit clients and add timeout
 	recv.shutdownWg.Add(1)
 	go func() {
 		defer recv.shutdownWg.Done()

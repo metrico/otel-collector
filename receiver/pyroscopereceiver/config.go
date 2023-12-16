@@ -12,16 +12,16 @@ type Protocols struct {
 	Http *confighttp.HTTPServerSettings `mapstructure:"http"`
 }
 
-var _ component.Config = (*Config)(nil)
-
-// Represents the receiver config settings within the collector's config.yaml
+// Represents the receiver config within the collector's config.yaml
 type Config struct {
 	Protocols Protocols `mapstructure:"protocols"`
 }
 
+var _ component.Config = (*Config)(nil)
+
 // Checks that the receiver configuration is valid
-func (conf *Config) Validate() error {
-	if conf.Protocols.Http.MaxRequestBodySize < 1 {
+func (cfg *Config) Validate() error {
+	if cfg.Protocols.Http.MaxRequestBodySize < 1 {
 		return fmt.Errorf("max_request_body_size must be positive")
 	}
 	return nil
