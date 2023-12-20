@@ -61,6 +61,16 @@ exporters:
       initial_interval: 5s
       max_interval: 30s
       max_elapsed_time: 300s
+  clickhouseprofileexporter:
+    dsn: tcp://0.0.0.0:9000/cloki
+    timeout: 10s
+    sending_queue:
+      queue_size: 100
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
   otlp:
     endpoint: localhost:4317
     tls:
@@ -84,7 +94,7 @@ service:
     logs/profiles:
       receivers: [pyroscopereceiver]
       processors: [batch]
-      exporters: [qryn]
+      exporters: [clickhouseprofileexporter]
     traces:
       receivers: [otlp]
       processors: [resourcedetection/system, spanmetrics, batch]

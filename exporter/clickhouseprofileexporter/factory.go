@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	typeStr = "qryn"
+	typeStr = "clickhouseprofileexporter"
 
 	defaultDsn = "tcp://127.0.0.1:9000/cloki"
 )
