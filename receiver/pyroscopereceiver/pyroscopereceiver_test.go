@@ -24,12 +24,11 @@ import (
 	"go.uber.org/zap"
 )
 
-type jfrTest struct {
+type jfrtest struct {
 	name      string
 	urlParams map[string]string
 	jfr       string
 	expected  plog.Logs
-	err       error
 }
 
 type profileLog struct {
@@ -44,7 +43,7 @@ func loadTestData(t *testing.T, filename string) []byte {
 	return b
 }
 
-func run(t *testing.T, tests []jfrTest, collectorAddr string, sink *consumertest.LogsSink) {
+func run(t *testing.T, tests []jfrtest, collectorAddr string, sink *consumertest.LogsSink) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.NoError(t, send(t, collectorAddr, tt.urlParams, tt.jfr), "send shouldn't have been failed")
@@ -121,9 +120,9 @@ func send(t *testing.T, addr string, urlParams map[string]string, jfr string) er
 }
 
 func TestPyroscopeIngestJfrCpu(t *testing.T) {
-	tests := make([]jfrTest, 1)
+	tests := make([]jfrtest, 1)
 	pb := loadTestData(t, "cortex-dev-01__kafka-0__cpu__0.pb")
-	tests[0] = jfrTest{
+	tests[0] = jfrtest{
 		name: "send labeled multipart form data gzipped cpu jfr to http ingest endpoint",
 		urlParams: map[string]string{
 			"name":       "com.example.App{dc=\"us-east-1\",kubernetes_pod_name=\"app-abcd1234\"}",
@@ -147,7 +146,6 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 			},
 			body: pb,
 		}}),
-		err: nil,
 	}
 	addr, sink := startHttpServer(t)
 	collectorAddr := fmt.Sprintf("http://%s%s", addr, ingestPath)
@@ -155,10 +153,10 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 }
 
 func TestPyroscopeIngestJfrMemory(t *testing.T) {
-	tests := make([]jfrTest, 1)
+	tests := make([]jfrtest, 1)
 	pbAllocInNewTlab := loadTestData(t, "memory_example_alloc_in_new_tlab.pb")
 	pbLiveObject := loadTestData(t, "memory_example_live_object.pb")
-	tests[0] = jfrTest{
+	tests[0] = jfrtest{
 		name: "send labeled multipart form data gzipped memoty jfr to http ingest endpoint",
 		urlParams: map[string]string{
 			"name":   "com.example.App{dc=\"us-east-1\",kubernetes_pod_name=\"app-abcd1234\"}",
@@ -195,7 +193,6 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 				},
 				body: pbLiveObject,
 			}}),
-		err: nil,
 	}
 
 	addr, sink := startHttpServer(t)
