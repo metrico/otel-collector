@@ -3,6 +3,7 @@ package ch
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -15,10 +16,7 @@ type clickhouseAccessNativeColumnar struct {
 	conn driver.Conn
 }
 
-type kv struct {
-	k string
-	v string
-}
+type tuple []any
 
 // Connects to clickhouse and checks the connection's health, returning a new native client
 func NewClickhouseAccessNativeColumnar(opts *clickhouse.Options) (*clickhouseAccessNativeColumnar, error) {
@@ -44,14 +42,13 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	rs := ls.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
 	sz := rs.Len()
 
-	// send efficient native columnar protocol
 	timestamp_ns := make([]uint64, sz)
 	profile_id := make([]string, sz)
 	typ := make([]string, sz)
 	service_name := make([]string, sz)
 	period_type := make([]string, sz)
 	period_unit := make([]string, sz)
-	tags := make([][]kv, sz)
+	tags := make([][]tuple, sz)
 	duration_ns := make([]uint64, sz)
 	payload_type := make([]string, sz)
 	payload := make([][]byte, sz)
@@ -66,39 +63,41 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 		r = rs.At(i)
 		m = r.Attributes()
 
-		timestamp_ns = append(timestamp_ns, uint64(r.Timestamp()))
+		timestamp_ns[i] = uint64(r.Timestamp())
 
-		profile_id = append(profile_id, "")
+		profile_id[i] = ""
 
 		tmp, _ = m.Get("type")
-		typ = append(typ, tmp.AsString())
+		typ[i] = tmp.AsString()
 
 		tmp, _ = m.Get("service_name")
-		service_name = append(service_name, tmp.AsString())
+		service_name[i] = tmp.AsString()
 
 		tmp, _ = m.Get("period_type")
-		period_type = append(period_type, tmp.AsString())
+		period_type[i] = tmp.AsString()
 
 		tmp, _ = m.Get("period_unit")
-		period_unit = append(period_unit, tmp.AsString())
+		period_unit[i] = tmp.AsString()
 
 		tmp, _ = m.Get("tags")
 		tm = tmp.Map().AsRaw()
-		tag := make([]kv, len(tm))
+		tag, j := make([]tuple, len(tm)), 0
 		for k, v := range tm {
-			tag = append(tag, kv{k, v.(string)})
+			tag[j] = tuple{k, v.(string)}
+			j++
 		}
-		tags = append(tags, tag)
+		tags[i] = tag
 
 		tmp, _ = m.Get("duration_ns")
-		duration_ns = append(duration_ns, uint64(tmp.Int()))
+		duration_ns[i], _ = strconv.ParseUint(tmp.Str(), 10, 64)
 
 		tmp, _ = m.Get("payload_type")
-		payload_type = append(payload_type, tmp.AsString())
+		payload_type[i] = tmp.AsString()
 
-		payload = append(payload, r.Body().Bytes().AsRaw())
+		payload[i] = r.Body().Bytes().AsRaw()
 	}
 
+	// column order here should match table column order
 	if err := b.Column(0).Append(timestamp_ns); err != nil {
 		return err
 	}
