@@ -125,7 +125,7 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 	tests[0] = jfrtest{
 		name: "send labeled multipart form data gzipped cpu jfr to http ingest endpoint",
 		urlParams: map[string]string{
-			"name":       "com.example.App{dc=\"us-east-1\",kubernetes_pod_name=\"app-abcd1234\"}",
+			"name":       "com.example.App{dc=us-east-1,kubernetes_pod_name=app-abcd1234}",
 			"from":       "1700332322",
 			"until":      "1700332329",
 			"format":     "jfr",
@@ -161,7 +161,7 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 	tests[0] = jfrtest{
 		name: "send labeled multipart form data gzipped memoty jfr to http ingest endpoint",
 		urlParams: map[string]string{
-			"name":   "com.example.App{dc=\"us-east-1\",kubernetes_pod_name=\"app-abcd1234\"}",
+			"name":   "com.example.App{dc=us-east-1,kubernetes_pod_name=app-abcd1234}",
 			"from":   "1700332322",
 			"until":  "1700332329",
 			"format": "jfr",
@@ -198,7 +198,8 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 					"payload_type": "0",
 				},
 				body: pbLiveObject,
-			}}),
+			},
+		}),
 	}
 
 	addr, sink := startHttpServer(t)

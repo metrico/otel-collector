@@ -17,7 +17,6 @@ import (
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
 	"github.com/prometheus/prometheus/model/labels"
-	promql_parser "github.com/prometheus/prometheus/promql/parser"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -198,12 +197,18 @@ func getAttrsFromParams(params *url.Values) (attrs, error) {
 	if i < 0 {
 		i = length
 	} else { // optional labels
-		promql := tmp[0][i:length]
-		labels, err := promql_parser.ParseMetric(promql)
-		if err != nil {
-			return att, fmt.Errorf("failed to parse labels: %w", err)
+		// TODO: improve this stupid {k=v(,k=v)*} compiler, checkout pyroscope's implementation
+		promqllike := tmp[0][i+1 : length-1] // stripe {}
+		if len(promqllike) > 0 {
+			words := strings.FieldsFunc(promqllike, func(r rune) bool { return r == '=' || r == ',' })
+			sz := len(words)
+			if sz == 0 || sz%2 != 0 {
+				return att, fmt.Errorf("failed to compile labels")
+			}
+			for j := 0; j < len(words); j += 2 {
+				att.labels = append(att.labels, labels.Label{Name: words[j], Value: words[j+1]})
+			}
 		}
-		att.labels = labels
 	}
 	// required app name
 	att.name = tmp[0][:i]
