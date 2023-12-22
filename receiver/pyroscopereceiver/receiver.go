@@ -122,9 +122,9 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (plog.Logs, error) {
 	rs := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
 	for _, pr := range ps {
 		r := rs.AppendEmpty()
-		r.SetTimestamp(pcommon.Timestamp(att.start))
+		r.SetTimestamp(pcommon.Timestamp(ns(att.start)))
 		m := r.Attributes()
-		m.PutStr("duration_ns", fmt.Sprint((att.end-att.start)*1e9))
+		m.PutStr("duration_ns", fmt.Sprint(ns(att.end-att.start)))
 		m.PutStr("service_name", att.name)
 		tm := m.PutEmptyMap("tags")
 		for _, l := range att.labels {
@@ -134,6 +134,10 @@ func parse(req *http.Request, recv *pyroscopeReceiver) (plog.Logs, error) {
 		r.Body().SetEmptyBytes().FromRaw(pr.Payload.Bytes())
 	}
 	return logs, nil
+}
+
+func ns(sec uint64) uint64 {
+	return sec * 1e9
 }
 
 func (recv *pyroscopeReceiver) openMultipartJfr(req *http.Request) (multipart.File, error) {
