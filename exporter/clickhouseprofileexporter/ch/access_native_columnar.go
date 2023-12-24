@@ -39,8 +39,11 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 		return fmt.Errorf("failed to prepare batch: %w", err)
 	}
 
-	rs := ls.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
-	sz := rs.Len()
+	// this implementation is tightly coupled to how pyroscope-java and pyroscopereciver work,
+	// specifically receiving a single profile at a time from the agent,
+	// and thus each batched resource logs slice contains a single log record
+	rl := ls.ResourceLogs()
+	sz := rl.Len()
 
 	timestamp_ns := make([]uint64, sz)
 	profile_id := make([]string, sz)
@@ -59,8 +62,8 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 		tmp pcommon.Value
 		tm  map[string]any
 	)
-	for i := 0; i < rs.Len(); i++ {
-		r = rs.At(i)
+	for i := 0; i < sz; i++ {
+		r = rl.At(i).ScopeLogs().At(0).LogRecords().At(0)
 		m = r.Attributes()
 
 		timestamp_ns[i] = uint64(r.Timestamp())

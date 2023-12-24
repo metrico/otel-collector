@@ -51,7 +51,7 @@ func (exp *clickhouseProfileExporter) send(ctx context.Context, logs plog.Logs) 
 		exp.logger.Error(msg)
 		return err
 	}
-	exp.logger.Info("inserted batch", zap.Int("size", logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().Len()))
+	exp.logger.Info("inserted batch", zap.Int("size", logs.ResourceLogs().Len()))
 	return nil
 }
 
