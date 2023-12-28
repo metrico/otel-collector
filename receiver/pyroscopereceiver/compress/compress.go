@@ -15,14 +15,16 @@ const (
 
 // Decodes compressed streams
 type Decompressor struct {
-	maxDecompressedSizeBytes int64
-	decoders                 map[codec]func(body io.Reader) (io.Reader, error)
+	decompressedSizeBytesExpectedValue int64
+	maxDecompressedSizeBytes           int64
+	decoders                           map[codec]func(body io.Reader) (io.Reader, error)
 }
 
 // Creates a new decompressor
-func NewDecompressor(maxDecompressedSizeBytes int64) *Decompressor {
+func NewDecompressor(decompressedSizeBytesExpectedValue int64, maxDecompressedSizeBytes int64) *Decompressor {
 	return &Decompressor{
-		maxDecompressedSizeBytes: maxDecompressedSizeBytes,
+		decompressedSizeBytesExpectedValue: decompressedSizeBytesExpectedValue,
+		maxDecompressedSizeBytes:           maxDecompressedSizeBytes,
 		decoders: map[codec]func(r io.Reader) (io.Reader, error){
 			Gzip: func(r io.Reader) (io.Reader, error) {
 				gr, err := gzip.NewReader(r)
@@ -36,7 +38,7 @@ func NewDecompressor(maxDecompressedSizeBytes int64) *Decompressor {
 }
 
 func (d *Decompressor) readBytes(r io.Reader) (*bytes.Buffer, error) {
-	buf := PrepareBuffer(d.maxDecompressedSizeBytes)
+	buf := d.prepareBuffer()
 
 	// read max+1 to validate size via a single Read()
 	lr := io.LimitReader(r, d.maxDecompressedSizeBytes+1)
@@ -70,16 +72,9 @@ func (d *Decompressor) Decompress(r io.Reader, c codec) (*bytes.Buffer, error) {
 }
 
 // Pre-allocates a buffer based on heuristics to minimize resize
-func PrepareBuffer(maxDecompressedSizeBytes int64) *bytes.Buffer {
-	var (
-		buf                      bytes.Buffer
-		expectedMinDataSizeBytes int64 = 10e3
-	)
-
-	if maxDecompressedSizeBytes < expectedMinDataSizeBytes {
-		expectedMinDataSizeBytes = maxDecompressedSizeBytes
-	}
+func (d *Decompressor) prepareBuffer() *bytes.Buffer {
+	var buf bytes.Buffer
 	// extra space to try avoid realloc where expected size fits enough
-	buf.Grow(int(expectedMinDataSizeBytes) + bytes.MinRead)
+	buf.Grow(int(d.decompressedSizeBytesExpectedValue) + bytes.MinRead)
 	return &buf
 }

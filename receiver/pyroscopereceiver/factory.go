@@ -12,8 +12,9 @@ import (
 const (
 	typeStr = "pyroscopereceiver"
 
-	defaultHttpAddr           = "0.0.0.0:8062"
-	defaultMaxRequestBodySize = 5e6 + 1e6 // reserve for metadata
+	defaultHttpAddr                                      = "0.0.0.0:8062"
+	defaultMaxRequestBodySize                            = 5e6 + 1e6  // reserve for metadata
+	defaultDecompressedRequestBodySizeBytesExpectedValue = 50e4 + 1e6 // reserve for metadata
 )
 
 func createDefaultConfig() component.Config {
@@ -24,6 +25,7 @@ func createDefaultConfig() component.Config {
 				MaxRequestBodySize: defaultMaxRequestBodySize,
 			},
 		},
+		DecompressedRequestBodySizeBytesExpectedValue: defaultDecompressedRequestBodySizeBytesExpectedValue,
 	}
 }
 
