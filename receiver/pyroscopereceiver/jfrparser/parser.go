@@ -198,7 +198,7 @@ func (pa *jfrPprofParser) addProfile(sampleType sampleType) *profileWrapper {
 	pw := &profileWrapper{
 		prof: profile_types.ProfileIR{
 			Type:        typetab[sampleType],
-			PayloadType: profile_types.PayloadTypePprof,
+			PayloadType: profile_types.Pprof,
 		},
 		pprof: &pprof_proto.Profile{},
 	}

@@ -31,8 +31,11 @@ func createLogsReceiver(_ context.Context, set receiver.CreateSettings, cfg comp
 	if nil == consumer {
 		return nil, component.ErrNilNextConsumer
 	}
-
-	return newPyroscopeReceiver(cfg.(*Config), consumer, &set), nil
+	recv, err := newPyroscopeReceiver(cfg.(*Config), consumer, &set)
+	if err != nil {
+		return nil, err
+	}
+	return recv, nil
 }
 
 // Creates a factory for the pyroscope receiver.

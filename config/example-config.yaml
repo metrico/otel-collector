@@ -13,8 +13,8 @@ receivers:
 
 processors:
   batch:
-    send_batch_size: 10000
-    timeout: 30s
+    send_batch_size: 1000
+    timeout: 10s
   memory_limiter:
     check_interval: 2s
     limit_mib: 1800
@@ -85,9 +85,11 @@ extensions:
   memory_ballast:
     size_mib: 1000
 service:
-  # telemetry:
+  telemetry:
+    metrics:
+      level: detailed
   #   logs:
-  #     level: "debug"
+  #     level: debug
   extensions: [pprof, zpages, health_check]
   pipelines:
     logs:

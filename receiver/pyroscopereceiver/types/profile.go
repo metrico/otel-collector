@@ -5,8 +5,10 @@ import (
 )
 
 // Enumeration of low-level payload type that are supported by the pipeline
+type PayloadType uint8
+
 const (
-	PayloadTypePprof = 0
+	Pprof PayloadType = iota
 )
 
 // Auxiliary profile metadata
@@ -27,5 +29,5 @@ type ProfileType struct {
 type ProfileIR struct {
 	Type        ProfileType
 	Payload     *bytes.Buffer
-	PayloadType uint32
+	PayloadType PayloadType
 }

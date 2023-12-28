@@ -67,7 +67,8 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 	sink := new(consumertest.LogsSink)
 	set := receivertest.NewNopCreateSettings()
 	set.Logger = zap.Must(zap.NewDevelopment())
-	recv := newPyroscopeReceiver(cfg, sink, &set)
+	recv, err := newPyroscopeReceiver(cfg, sink, &set)
+	require.NoError(t, err)
 
 	require.NoError(t, recv.Start(context.Background(), componenttest.NewNopHost()))
 	t.Cleanup(func() { require.NoError(t, recv.Shutdown(context.Background())) })
@@ -133,7 +134,7 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 		},
 		jfr: filepath.Join("testdata", "cortex-dev-01__kafka-0__cpu__0.jfr"),
 		expected: gen([]profileLog{{
-			timestamp: 1700332322,
+			timestamp: 1700332322000000000,
 			attrs: map[string]any{
 				"service_name": "com.example.App",
 				"tags": map[string]any{
@@ -168,7 +169,7 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 		},
 		jfr: filepath.Join("testdata", "memory_alloc_live_example.jfr"),
 		expected: gen([]profileLog{{
-			timestamp: 1700332322,
+			timestamp: 1700332322000000000,
 			attrs: map[string]any{
 				"service_name": "com.example.App",
 				"tags": map[string]any{
@@ -184,7 +185,7 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 			body: pbAllocInNewTlab,
 		},
 			{
-				timestamp: 1700332322,
+				timestamp: 1700332322000000000,
 				attrs: map[string]any{
 					"service_name": "com.example.App",
 					"tags": map[string]any{

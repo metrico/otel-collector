@@ -3,18 +3,27 @@ package clickhouseprofileexporter
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/metrico/otel-collector/exporter/clickhouseprofileexporter/ch"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
+)
+
+const (
+	errorCodeError   = "1"
+	errorCodeSuccess = ""
 )
 
 type clickhouseProfileExporter struct {
 	cfg    *Config
 	set    *exporter.CreateSettings
 	logger *zap.Logger
+	meter  metric.Meter
 
 	ch clickhouseAccess
 }
@@ -36,23 +45,36 @@ func newClickhouseProfileExporter(ctx context.Context, set *exporter.CreateSetti
 	if err != nil {
 		return nil, fmt.Errorf("failed to init native ch storage: %w", err)
 	}
-	return &clickhouseProfileExporter{
+	exp := &clickhouseProfileExporter{
 		cfg:    cfg,
 		set:    set,
 		logger: set.Logger,
+		meter:  set.MeterProvider.Meter(typeStr),
 		ch:     ch,
-	}, nil
+	}
+	if err := initMetrics(exp.meter); err != nil {
+		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
+		return exp, err
+	}
+	return exp, nil
 }
 
 // Sends the profiles to clickhouse server using the configured connection
 func (exp *clickhouseProfileExporter) send(ctx context.Context, logs plog.Logs) error {
+	start := time.Now().UnixMilli()
 	if err := exp.ch.InsertBatch(logs); err != nil {
-		msg := fmt.Sprintf("failed to insert batch: [%s]", err.Error())
-		exp.logger.Error(msg)
+		otelcolExporterClickhouseProfileFlushTimeMillis.Record(ctx, time.Now().UnixMilli()-start, metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError)))
+		exp.logger.Error(fmt.Sprintf("failed to insert batch: [%s]", err.Error()))
 		return err
 	}
+	otelcolExporterClickhouseProfileFlushTimeMillis.Record(ctx, time.Now().UnixMilli()-start, metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeSuccess)))
 	exp.logger.Info("inserted batch", zap.Int("size", logs.ResourceLogs().Len()))
 	return nil
+}
+
+func newOtelcolAttrSetBatch(errorCode string) *attribute.Set {
+	s := attribute.NewSet(attribute.KeyValue{Key: "error_code", Value: attribute.StringValue(errorCode)})
+	return &s
 }
 
 // Shuts down the exporter, by shutting down the ch connection pull
