@@ -85,7 +85,7 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata, ma
 			if ts != nil && ts.Name == "STATE_RUNNABLE" {
 				pa.addStacktrace(sampleTypeCpu, pa.jfrParser.ExecutionSample.StackTrace, values[:1])
 			}
-			// TODO: this code is from github/grafana/pyroscope, need to validate that the query simulator handles this branch as expected for wall
+			// TODO: this code is from github/grafana/pyroscope, need to validate that the qryn.js query simulator handles this branch as expected for wall
 			if event == "wall" {
 				pa.addStacktrace(sampleTypeWall, pa.jfrParser.ExecutionSample.StackTrace, values[:1])
 			}
@@ -114,7 +114,7 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata, ma
 	for _, pr := range pa.proftab {
 		if nil != pr {
 			// assuming jfr-pprof conversion should not expand memory footprint, transitively applying jfr limit on pprof
-			pr.prof.Payload = &bytes.Buffer{} // TODO: consider pre-allocate a buffer sized relatively to jfr, consider event distribution for example low probability live event as part of alloc profile, something better than: compress.PrepareBuffer(pa.maxDecompressedSizeBytes)
+			pr.prof.Payload = &bytes.Buffer{} // TODO: try simple statistical model to pre-allocate a buffer
 			pr.pprof.WriteUncompressed(pr.prof.Payload)
 			ps = append(ps, pr.prof)
 		}
@@ -124,6 +124,7 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata, ma
 
 func nopSymbolProcessor(ref *jfr_types.SymbolList) {}
 
+// TODO: hash location lists, merge-sort similar samples and free unused pprof objects
 func (pa *jfrPprofParser) addStacktrace(sampleType sampleType, ref jfr_types.StackTraceRef, values []int64) {
 	pr := pa.getProfile(sampleType)
 	if nil == pr {

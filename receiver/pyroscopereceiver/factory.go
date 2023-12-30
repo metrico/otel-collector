@@ -2,6 +2,7 @@ package pyroscopereceiver
 
 import (
 	"context"
+	"time"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/confighttp"
@@ -13,7 +14,8 @@ const (
 	typeStr = "pyroscopereceiver"
 
 	defaultHttpAddr                                      = "0.0.0.0:8062"
-	defaultMaxRequestBodySize                            = 5e6 + 1e6  // reserve for metadata
+	defaultMaxRequestBodySize                            = 5e6 + 1e6 // reserve for metadata
+	defaultTimeout                                       = 10 * time.Second
 	defaultDecompressedRequestBodySizeBytesExpectedValue = 50e4 + 1e6 // reserve for metadata
 )
 
@@ -25,6 +27,7 @@ func createDefaultConfig() component.Config {
 				MaxRequestBodySize: defaultMaxRequestBodySize,
 			},
 		},
+		Timeout: defaultTimeout,
 		DecompressedRequestBodySizeBytesExpectedValue: defaultDecompressedRequestBodySizeBytesExpectedValue,
 	}
 }

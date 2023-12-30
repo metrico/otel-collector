@@ -63,6 +63,7 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 				MaxRequestBodySize: defaultMaxRequestBodySize,
 			},
 		},
+		Timeout: defaultTimeout,
 		DecompressedRequestBodySizeBytesExpectedValue: defaultDecompressedRequestBodySizeBytesExpectedValue,
 	}
 	sink := new(consumertest.LogsSink)

@@ -70,16 +70,6 @@ type params struct {
 	labels labels.Labels
 }
 
-// Extracts start time from context
-func StartTimeFromContext(ctx context.Context) int64 {
-	return ctx.Value(keyStart).(int64)
-}
-
-// Creates new context with start time
-func ContextWithStart(ctx context.Context, start int64) context.Context {
-	return context.WithValue(ctx, keyStart, start)
-}
-
 func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.CreateSettings) (*pyroscopeReceiver, error) {
 	recv := &pyroscopeReceiver{
 		cfg:    cfg,
@@ -91,7 +81,7 @@ func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.Cre
 	recv.decompressor = compress.NewDecompressor(recv.cfg.DecompressedRequestBodySizeBytesExpectedValue, recv.cfg.Protocols.Http.MaxRequestBodySize)
 	recv.httpMux = http.NewServeMux()
 	recv.httpMux.HandleFunc(ingestPath, func(resp http.ResponseWriter, req *http.Request) {
-		handleIngest(resp, req, recv)
+		httpHandlerIngest(resp, req, recv)
 	})
 	if err := initMetrics(recv.meter); err != nil {
 		recv.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
@@ -100,43 +90,124 @@ func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.Cre
 	return recv, nil
 }
 
-func handleIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeReceiver) {
-	ctx := ContextWithStart(req.Context(), time.Now().UnixMilli())
+// TODO: rate limit clients
+func httpHandlerIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeReceiver) {
+	ctx, cancel := context.WithTimeout(contextWithStart(req.Context(), time.Now().UnixMilli()), recv.cfg.Timeout)
+	defer cancel()
 
-	qs := req.URL.Query()
-	params, err := readParams(&qs)
-	if err != nil {
-		handleError(ctx, resp, "text/plain", http.StatusBadRequest, "bad url query", "", errorCodeError, recv)
-		return
-	}
+	// all compute should be bounded by timeout, so dont add compute here
 
-	if req.Method != http.MethodPost {
-		handleError(ctx, resp, "text/plain", http.StatusMethodNotAllowed, fmt.Sprintf("method not allowed, supported: [%s]", http.MethodPost), params.name, errorCodeError, recv)
+	select {
+	case <-ctx.Done():
+		handleError(ctx, resp, "text/plain", http.StatusRequestTimeout, fmt.Sprintf("receiver timeout elapsed: %s", recv.cfg.Timeout), "", errorCodeError, recv)
 		return
+	case <-handle(ctx, resp, req, recv):
 	}
+}
 
-	logs, err := parse(ctx, req, params, recv)
-	if err != nil {
-		handleError(ctx, resp, "text/plain", http.StatusBadRequest, err.Error(), params.name, errorCodeError, recv)
-		return
-	}
+func startTimeFromContext(ctx context.Context) int64 {
+	return ctx.Value(keyStart).(int64)
+}
 
-	// delegate to next consumer in the pipeline
-	// TODO: support memorylimiter processor, apply retry policy on "oom", and consider to shift right allocs from the receiver
-	err = recv.next.ConsumeLogs(ctx, logs)
-	if err != nil {
-		handleError(ctx, resp, "text/plain", http.StatusInternalServerError, err.Error(), params.name, errorCodeError, recv)
-		return
-	}
-	otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(params.name, errorCodeSuccess)))
-	otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().Unix()-StartTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(params.name, errorCodeSuccess)))
+func contextWithStart(ctx context.Context, start int64) context.Context {
+	return context.WithValue(ctx, keyStart, start)
+}
+
+func handle(ctx context.Context, resp http.ResponseWriter, req *http.Request, recv *pyroscopeReceiver) <-chan struct{} {
+	c := make(chan struct{})
+	go func() {
+		// signal completion event
+		defer func() { c <- struct{}{} }()
+
+		qs := req.URL.Query()
+		pm, err := readParams(&qs)
+		if err != nil {
+			handleError(ctx, resp, "text/plain", http.StatusBadRequest, "bad url query", "", errorCodeError, recv)
+			return
+		}
+
+		if req.Method != http.MethodPost {
+			handleError(ctx, resp, "text/plain", http.StatusMethodNotAllowed, fmt.Sprintf("method not allowed, supported: [%s]", http.MethodPost), pm.name, errorCodeError, recv)
+			return
+		}
+
+		pl, err := readProfiles(ctx, req, pm, recv)
+		if err != nil {
+			handleError(ctx, resp, "text/plain", http.StatusBadRequest, err.Error(), pm.name, errorCodeError, recv)
+			return
+		}
+
+		// delegate to next consumer in the pipeline
+		// TODO: support memorylimiter processor, apply retry policy on "oom" event, depends on https://github.com/open-telemetry/opentelemetry-collector/issues/9196
+		err = recv.next.ConsumeLogs(ctx, pl)
+		if err != nil {
+			handleError(ctx, resp, "text/plain", http.StatusInternalServerError, err.Error(), pm.name, errorCodeError, recv)
+			return
+		}
+
+		otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
+		otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().Unix()-startTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
+	}()
+	return c
 }
 
 func handleError(ctx context.Context, resp http.ResponseWriter, contentType string, statusCode int, msg string, service string, errorCode string, recv *pyroscopeReceiver) {
 	otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
-	otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().Unix()-StartTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
+	otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().Unix()-startTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
 	recv.logger.Error(msg)
 	writeResponse(resp, "text/plain", http.StatusMethodNotAllowed, []byte(msg))
+}
+
+func readParams(qs *url.Values) (params, error) {
+	var (
+		tmp []string
+		ok  bool
+		qsv        = *qs
+		p   params = params{}
+	)
+
+	if tmp, ok = qsv["from"]; !ok {
+		return p, fmt.Errorf("required start time is missing")
+	}
+	start, err := strconv.ParseUint(tmp[0], 10, 64)
+	if err != nil {
+		return p, fmt.Errorf("failed to parse start time: %w", err)
+	}
+	p.start = start
+
+	if tmp, ok = qsv["name"]; !ok {
+		return p, fmt.Errorf("required labels are missing")
+	}
+	i := strings.Index(tmp[0], "{")
+	length := len(tmp[0])
+	if i < 0 {
+		i = length
+	} else { // optional labels
+		// TODO: improve this stupid {k=v(,k=v)*} compiler, checkout pyroscope's implementation
+		promqllike := tmp[0][i+1 : length-1] // stripe {}
+		if len(promqllike) > 0 {
+			words := strings.FieldsFunc(promqllike, func(r rune) bool { return r == '=' || r == ',' })
+			sz := len(words)
+			if sz == 0 || sz%2 != 0 {
+				return p, fmt.Errorf("failed to compile labels")
+			}
+			for j := 0; j < len(words); j += 2 {
+				p.labels = append(p.labels, labels.Label{Name: words[j], Value: words[j+1]})
+			}
+		}
+	}
+	// required app name
+	p.name = tmp[0][:i]
+
+	if tmp, ok = qsv["until"]; !ok {
+		return p, fmt.Errorf("required end time is missing")
+	}
+	end, err := strconv.ParseUint(tmp[0], 10, 64)
+	if err != nil {
+		return p, fmt.Errorf("failed to parse end time: %w", err)
+	}
+	p.end = end
+	return p, nil
 }
 
 func newOtelcolAttrSetHttp(service string, errorCode string) *attribute.Set {
@@ -144,7 +215,7 @@ func newOtelcolAttrSetHttp(service string, errorCode string) *attribute.Set {
 	return &s
 }
 
-func parse(ctx context.Context, req *http.Request, pm params, recv *pyroscopeReceiver) (plog.Logs, error) {
+func readProfiles(ctx context.Context, req *http.Request, pm params, recv *pyroscopeReceiver) (plog.Logs, error) {
 	var (
 		tmp []string
 		ok  bool
@@ -251,58 +322,6 @@ func resetHeaders(req *http.Request) {
 	req.ContentLength = -1
 }
 
-func readParams(qs *url.Values) (params, error) {
-	var (
-		tmp []string
-		ok  bool
-		qsv        = *qs
-		p   params = params{}
-	)
-
-	if tmp, ok = qsv["from"]; !ok {
-		return p, fmt.Errorf("required start time is missing")
-	}
-	start, err := strconv.ParseUint(tmp[0], 10, 64)
-	if err != nil {
-		return p, fmt.Errorf("failed to parse start time: %w", err)
-	}
-	p.start = start
-
-	if tmp, ok = qsv["name"]; !ok {
-		return p, fmt.Errorf("required labels are missing")
-	}
-	i := strings.Index(tmp[0], "{")
-	length := len(tmp[0])
-	if i < 0 {
-		i = length
-	} else { // optional labels
-		// TODO: improve this stupid {k=v(,k=v)*} compiler, checkout pyroscope's implementation
-		promqllike := tmp[0][i+1 : length-1] // stripe {}
-		if len(promqllike) > 0 {
-			words := strings.FieldsFunc(promqllike, func(r rune) bool { return r == '=' || r == ',' })
-			sz := len(words)
-			if sz == 0 || sz%2 != 0 {
-				return p, fmt.Errorf("failed to compile labels")
-			}
-			for j := 0; j < len(words); j += 2 {
-				p.labels = append(p.labels, labels.Label{Name: words[j], Value: words[j+1]})
-			}
-		}
-	}
-	// required app name
-	p.name = tmp[0][:i]
-
-	if tmp, ok = qsv["until"]; !ok {
-		return p, fmt.Errorf("required end time is missing")
-	}
-	end, err := strconv.ParseUint(tmp[0], 10, 64)
-	if err != nil {
-		return p, fmt.Errorf("failed to parse end time: %w", err)
-	}
-	p.end = end
-	return p, nil
-}
-
 func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) {
 	m.PutStr("type", prof.Type.Type)
 	m.PutStr("period_type", prof.Type.PeriodType)
@@ -326,7 +345,6 @@ func (recv *pyroscopeReceiver) Start(_ context.Context, host component.Host) err
 		return fmt.Errorf("failed to create tcp listener: %w", err)
 	}
 
-	// TODO: rate limit clients and add timeout
 	recv.shutdownWg.Add(1)
 	go func() {
 		defer recv.shutdownWg.Done()

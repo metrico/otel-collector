@@ -75,6 +75,7 @@ func (d *Decompressor) Decompress(r io.Reader, c codec) (*bytes.Buffer, error) {
 func (d *Decompressor) prepareBuffer() *bytes.Buffer {
 	var buf bytes.Buffer
 	// extra space to try avoid realloc where expected size fits enough
+	// TODO: try simple statistical model to pre-allocate a buffer
 	buf.Grow(int(d.decompressedSizeBytesExpectedValue) + bytes.MinRead)
 	return &buf
 }

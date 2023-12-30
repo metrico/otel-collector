@@ -36,6 +36,7 @@ type clickhouseAccess interface {
 	Shutdown() error
 }
 
+// TODO: batch like this https://github.com/open-telemetry/opentelemetry-collector/issues/8122
 func newClickhouseProfileExporter(ctx context.Context, set *exporter.CreateSettings, cfg *Config) (*clickhouseProfileExporter, error) {
 	opts, err := clickhouse.ParseDSN(cfg.Dsn)
 	if err != nil {
