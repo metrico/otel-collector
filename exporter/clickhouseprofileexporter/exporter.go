@@ -38,21 +38,21 @@ type clickhouseAccess interface {
 
 // TODO: batch like this https://github.com/open-telemetry/opentelemetry-collector/issues/8122
 func newClickhouseProfileExporter(ctx context.Context, set *exporter.CreateSettings, cfg *Config) (*clickhouseProfileExporter, error) {
-	opts, err := clickhouse.ParseDSN(cfg.Dsn)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse clickhouse dsn: %w", err)
-	}
-	ch, err := ch.NewClickhouseAccessNativeColumnar(opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init native ch storage: %w", err)
-	}
 	exp := &clickhouseProfileExporter{
 		cfg:    cfg,
 		set:    set,
 		logger: set.Logger,
 		meter:  set.MeterProvider.Meter(typeStr),
-		ch:     ch,
 	}
+	opts, err := clickhouse.ParseDSN(cfg.Dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse clickhouse dsn: %w", err)
+	}
+	ch, err := ch.NewClickhouseAccessNativeColumnar(opts, exp.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init native ch storage: %w", err)
+	}
+	exp.ch = ch
 	if err := initMetrics(exp.meter); err != nil {
 		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
 		return exp, err

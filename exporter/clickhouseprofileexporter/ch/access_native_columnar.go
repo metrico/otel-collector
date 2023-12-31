@@ -9,27 +9,32 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.uber.org/zap"
 )
 
 // schema reference: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
 type clickhouseAccessNativeColumnar struct {
 	conn driver.Conn
+
+	logger *zap.Logger
 }
 
 type tuple []any
 
 // Connects to clickhouse and checks the connection's health, returning a new native client
-func NewClickhouseAccessNativeColumnar(opts *clickhouse.Options) (*clickhouseAccessNativeColumnar, error) {
+func NewClickhouseAccessNativeColumnar(opts *clickhouse.Options, logger *zap.Logger) (*clickhouseAccessNativeColumnar, error) {
 	c, err := clickhouse.Open(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to clickhouse: %w", err)
 	}
-	if err = c.Ping(context.Background()); err != nil {
-		return nil, fmt.Errorf("failed to ping clickhouse server: %w", err)
+	nc := &clickhouseAccessNativeColumnar{
+		conn:   c,
+		logger: logger,
 	}
-	return &clickhouseAccessNativeColumnar{
-		conn: c,
-	}, nil
+	if err = c.Ping(context.Background()); err != nil {
+		nc.logger.Warn(fmt.Sprintf("failed to ping clickhouse server: %s", err.Error()))
+	}
+	return nc, nil
 }
 
 // Inserts a profile batch into the clickhouse server using columnar native protocol
