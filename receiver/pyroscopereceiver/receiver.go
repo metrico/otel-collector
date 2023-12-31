@@ -155,7 +155,7 @@ func handleError(ctx context.Context, resp http.ResponseWriter, contentType stri
 	otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
 	otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().Unix()-startTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
 	recv.logger.Error(msg)
-	writeResponse(resp, "text/plain", http.StatusMethodNotAllowed, []byte(msg))
+	writeResponse(resp, "text/plain", statusCode, []byte(msg))
 }
 
 func readParams(qs *url.Values) (params, error) {
