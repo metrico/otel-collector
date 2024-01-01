@@ -81,7 +81,7 @@ func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.Cre
 	recv.decompressor = compress.NewDecompressor(recv.cfg.DecompressedRequestBodySizeBytesExpectedValue, recv.cfg.Protocols.Http.MaxRequestBodySize)
 	recv.httpMux = http.NewServeMux()
 	recv.httpMux.HandleFunc(ingestPath, func(resp http.ResponseWriter, req *http.Request) {
-		httpHandlerIngest(resp, req, recv)
+		recv.httpHandlerIngest(resp, req)
 	})
 	if err := initMetrics(recv.meter); err != nil {
 		recv.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
@@ -91,7 +91,7 @@ func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.Cre
 }
 
 // TODO: rate limit clients
-func httpHandlerIngest(resp http.ResponseWriter, req *http.Request, recv *pyroscopeReceiver) {
+func (recv *pyroscopeReceiver) httpHandlerIngest(resp http.ResponseWriter, req *http.Request) {
 	ctx, cancel := context.WithTimeout(contextWithStart(req.Context(), time.Now().UnixMilli()), recv.cfg.Timeout)
 	defer cancel()
 
@@ -99,9 +99,9 @@ func httpHandlerIngest(resp http.ResponseWriter, req *http.Request, recv *pyrosc
 
 	select {
 	case <-ctx.Done():
-		handleError(ctx, resp, "text/plain", http.StatusRequestTimeout, fmt.Sprintf("receiver timeout elapsed: %s", recv.cfg.Timeout), "", errorCodeError, recv)
+		recv.handleError(ctx, resp, "text/plain", http.StatusRequestTimeout, fmt.Sprintf("receiver timeout elapsed: %s", recv.cfg.Timeout), "", errorCodeError)
 		return
-	case <-handle(ctx, resp, req, recv):
+	case <-recv.handle(ctx, resp, req):
 	}
 }
 
@@ -113,7 +113,7 @@ func contextWithStart(ctx context.Context, start int64) context.Context {
 	return context.WithValue(ctx, keyStart, start)
 }
 
-func handle(ctx context.Context, resp http.ResponseWriter, req *http.Request, recv *pyroscopeReceiver) <-chan struct{} {
+func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWriter, req *http.Request) <-chan struct{} {
 	c := make(chan struct{})
 	go func() {
 		// signal completion event
@@ -122,18 +122,18 @@ func handle(ctx context.Context, resp http.ResponseWriter, req *http.Request, re
 		qs := req.URL.Query()
 		pm, err := readParams(&qs)
 		if err != nil {
-			handleError(ctx, resp, "text/plain", http.StatusBadRequest, "bad url query", "", errorCodeError, recv)
+			recv.handleError(ctx, resp, "text/plain", http.StatusBadRequest, "bad url query", "", errorCodeError)
 			return
 		}
 
 		if req.Method != http.MethodPost {
-			handleError(ctx, resp, "text/plain", http.StatusMethodNotAllowed, fmt.Sprintf("method not allowed, supported: [%s]", http.MethodPost), pm.name, errorCodeError, recv)
+			recv.handleError(ctx, resp, "text/plain", http.StatusMethodNotAllowed, fmt.Sprintf("method not allowed, supported: [%s]", http.MethodPost), pm.name, errorCodeError)
 			return
 		}
 
-		pl, err := readProfiles(ctx, req, pm, recv)
+		pl, err := recv.readProfiles(ctx, req, pm)
 		if err != nil {
-			handleError(ctx, resp, "text/plain", http.StatusBadRequest, err.Error(), pm.name, errorCodeError, recv)
+			recv.handleError(ctx, resp, "text/plain", http.StatusBadRequest, err.Error(), pm.name, errorCodeError)
 			return
 		}
 
@@ -141,7 +141,7 @@ func handle(ctx context.Context, resp http.ResponseWriter, req *http.Request, re
 		// TODO: support memorylimiter processor, apply retry policy on "oom" event, depends on https://github.com/open-telemetry/opentelemetry-collector/issues/9196
 		err = recv.next.ConsumeLogs(ctx, pl)
 		if err != nil {
-			handleError(ctx, resp, "text/plain", http.StatusInternalServerError, err.Error(), pm.name, errorCodeError, recv)
+			recv.handleError(ctx, resp, "text/plain", http.StatusInternalServerError, err.Error(), pm.name, errorCodeError)
 			return
 		}
 
@@ -151,7 +151,7 @@ func handle(ctx context.Context, resp http.ResponseWriter, req *http.Request, re
 	return c
 }
 
-func handleError(ctx context.Context, resp http.ResponseWriter, contentType string, statusCode int, msg string, service string, errorCode string, recv *pyroscopeReceiver) {
+func (recv *pyroscopeReceiver) handleError(ctx context.Context, resp http.ResponseWriter, contentType string, statusCode int, msg string, service string, errorCode string) {
 	otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
 	otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().Unix()-startTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
 	recv.logger.Error(msg)
@@ -215,7 +215,7 @@ func newOtelcolAttrSetHttp(service string, errorCode string) *attribute.Set {
 	return &s
 }
 
-func readProfiles(ctx context.Context, req *http.Request, pm params, recv *pyroscopeReceiver) (plog.Logs, error) {
+func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request, pm params) (plog.Logs, error) {
 	var (
 		tmp []string
 		ok  bool
