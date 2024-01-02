@@ -51,7 +51,6 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	sz := rl.Len()
 
 	timestamp_ns := make([]uint64, sz)
-	profile_id := make([]string, sz)
 	typ := make([]string, sz)
 	service_name := make([]string, sz)
 	period_type := make([]string, sz)
@@ -72,8 +71,6 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 		m = r.Attributes()
 
 		timestamp_ns[i] = uint64(r.Timestamp())
-
-		profile_id[i] = ""
 
 		tmp, _ = m.Get("type")
 		typ[i] = tmp.AsString()
@@ -109,31 +106,28 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	if err := b.Column(0).Append(timestamp_ns); err != nil {
 		return err
 	}
-	if err := b.Column(1).Append(profile_id); err != nil {
+	if err := b.Column(1).Append(typ); err != nil {
 		return err
 	}
-	if err := b.Column(2).Append(typ); err != nil {
+	if err := b.Column(2).Append(service_name); err != nil {
 		return err
 	}
-	if err := b.Column(3).Append(service_name); err != nil {
+	if err := b.Column(3).Append(period_type); err != nil {
 		return err
 	}
-	if err := b.Column(4).Append(period_type); err != nil {
+	if err := b.Column(4).Append(period_unit); err != nil {
 		return err
 	}
-	if err := b.Column(5).Append(period_unit); err != nil {
+	if err := b.Column(5).Append(tags); err != nil {
 		return err
 	}
-	if err := b.Column(6).Append(tags); err != nil {
+	if err := b.Column(6).Append(duration_ns); err != nil {
 		return err
 	}
-	if err := b.Column(7).Append(duration_ns); err != nil {
+	if err := b.Column(7).Append(payload_type); err != nil {
 		return err
 	}
-	if err := b.Column(8).Append(payload_type); err != nil {
-		return err
-	}
-	if err := b.Column(9).Append(payload); err != nil {
+	if err := b.Column(8).Append(payload); err != nil {
 		return err
 	}
 	return b.Send()
