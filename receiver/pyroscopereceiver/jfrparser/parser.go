@@ -53,7 +53,7 @@ func NewJfrPprofParser() *jfrPprofParser {
 	return &jfrPprofParser{}
 }
 
-// Parses the jfr buffer into pprof
+// Parses the jfr buffer into pprof. The returned slice may be empty without an error.
 func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata, maxDecompressedSizeBytes int64) ([]profile_types.ProfileIR, error) {
 	var (
 		period int64

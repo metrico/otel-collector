@@ -136,6 +136,11 @@ func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWri
 			recv.handleError(ctx, resp, "text/plain", http.StatusBadRequest, err.Error(), pm.name, errorCodeError)
 			return
 		}
+		// if no profiles have been parsed, dont error but return
+		if pl.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().Len() == 0 {
+			writeResponseNoContent(resp)
+			return
+		}
 
 		// delegate to next consumer in the pipeline
 		// TODO: support memorylimiter processor, apply retry policy on "oom" event, depends on https://github.com/open-telemetry/opentelemetry-collector/issues/9196
@@ -147,6 +152,7 @@ func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWri
 
 		otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
 		otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().Unix()-startTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
+		writeResponseNoContent(resp)
 	}()
 	return c
 }
@@ -276,6 +282,7 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		r.Body().SetEmptyBytes().FromRaw(pr.Payload.Bytes())
 		sz += pr.Payload.Len()
 	}
+	// sz may be 0 and it will be recorded
 	otelcolReceiverPyroscopeParsedPayloadSizeBytes.Record(ctx, int64(sz), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatPprof, "")))
 	return logs, nil
 }
@@ -364,8 +371,16 @@ func (recv *pyroscopeReceiver) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func writeResponse(w http.ResponseWriter, contentType string, statusCode int, msg []byte) {
-	w.Header().Set("Content-Type", contentType)
+func writeResponseNoContent(w http.ResponseWriter) {
+	writeResponse(w, "", http.StatusNoContent, nil)
+}
+
+func writeResponse(w http.ResponseWriter, contentType string, statusCode int, payload []byte) {
+	if len(contentType) > 0 {
+		w.Header().Set("Content-Type", contentType)
+	}
 	w.WriteHeader(statusCode)
-	_, _ = w.Write(msg)
+	if payload != nil {
+		_, _ = w.Write(payload)
+	}
 }
