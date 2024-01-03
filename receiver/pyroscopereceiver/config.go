@@ -34,7 +34,7 @@ func (cfg *Config) Validate() error {
 	if cfg.Protocols.Http.MaxRequestBodySize < 1 {
 		return fmt.Errorf("max_request_body_size must be positive")
 	}
-	if cfg.DecompressedRequestBodySizeBytesExpectedValue < 1 {
+	if cfg.DecompressedRequestBodySizeBytesExpectedValue < 0 {
 		return fmt.Errorf("request_body_size_expected_value must be positive")
 	}
 	if cfg.DecompressedRequestBodySizeBytesExpectedValue > cfg.Protocols.Http.MaxRequestBodySize {
