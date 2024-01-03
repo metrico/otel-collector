@@ -10,7 +10,6 @@ Exports conveyed OpenTelemetry logs backed IR for profiles into a Clickhouse clu
 ## Configuration
 
 - `dsn` (required): sets the ClickHouse server Data Source Name. For tcp protocol reference: [ClickHouse/clickhouse-go#dsn](https://github.com/ClickHouse/clickhouse-go#dsn). For http protocol reference: [mailru/go-clickhouse/#dsn](https://github.com/mailru/go-clickhouse/#dsn).
-- `clustered_clickhouse` (required): true if Clickhouse cluster is used.
 
 ## Example
 
