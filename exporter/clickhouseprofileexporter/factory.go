@@ -12,7 +12,7 @@ import (
 const (
 	typeStr = "clickhouseprofileexporter"
 
-	defaultDsn = "tcp://127.0.0.1:9000/cloki"
+	defaultDsn = "tcp://127.0.0.1:9000/qryn"
 )
 
 func createDefaultConfig() component.Config {

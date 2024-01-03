@@ -54,7 +54,7 @@ processors:
 
 exporters:
   qryn:
-    dsn: tcp://clickhouse-server:9000/cloki?username=qryn&password=demo
+    dsn: tcp://clickhouse-server:9000/qryn?username=qryn&password=demo
     timeout: 10s
     sending_queue:
       queue_size: 100
@@ -64,7 +64,7 @@ exporters:
       max_interval: 30s
       max_elapsed_time: 300s
   clickhouseprofileexporter:
-    dsn: tcp://0.0.0.0:9000/cloki
+    dsn: tcp://0.0.0.0:9000/qryn
     timeout: 10s
     sending_queue:
       queue_size: 100

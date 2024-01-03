@@ -23,7 +23,7 @@ receivers:
       
 exporters:
   clickhouseprofileexporter:
-      dsn: tcp://0.0.0.0:9000/cloki
+      dsn: tcp://0.0.0.0:9000/qryn
       timeout: 10s
       sending_queue:
         queue_size: 100
