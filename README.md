@@ -145,7 +145,7 @@ processors:
         new_name: traces_spanmetrics_latency
 exporters:
   qryn:
-    dsn: tcp://clickhouse-server:9000/cloki?username=default&password=*************
+    dsn: tcp://clickhouse-server:9000/qryn?username=default&password=*************
     timeout: 10s
     sending_queue:
       queue_size: 100

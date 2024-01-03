@@ -1,17 +1,15 @@
-# Pyroscope Receiver
+# Clickhouse Profile Exporter
 
 | Status                   |                       |
 | ------------------------ |-----------------------|
 | Stability                | [beta]                |
 | Supported pipeline types | logs                  |
 
-Implements the Pyroscope ingest protocol and conveys the accepted profiles as OpenTelemetry logs backed IR for further processing and export.
+Exports conveyed OpenTelemetry logs backed IR for profiles into a Clickhouse cluster. See [Pyropscope Receiver](../../receiver/pyroscopereceiver), which can send compatible profiles.
 
 ## Configuration
 
-- `protocols`: sets the application layer protocols that the receiver will serve. See [Supported Protocols](#supported-protocols). Default is http/s on 0.0.0.0:8062 with max request body size of: 5e6 + 1e6.
-- `timeout`: sets the server reponse timeout. Default is 10 seconds.
-- `request_body_size_expected_value`: sets the expected decompressed request body size in bytes to size pipeline buffers and optimize allocations. Default is 0.
+- `dsn` (required): sets the ClickHouse server Data Source Name. For tcp protocol reference: [ClickHouse/clickhouse-go#dsn](https://github.com/ClickHouse/clickhouse-go#dsn). For http protocol reference: [mailru/go-clickhouse/#dsn](https://github.com/mailru/go-clickhouse/#dsn).
 
 ## Example
 
@@ -42,11 +40,3 @@ service:
       processors: [batch]
       exporters: [clickhouseprofileexporter]
 ```
-
-## Supported Protocols
-
-Http
-
-## Supported Languages
-
-Java

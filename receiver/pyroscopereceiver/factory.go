@@ -16,7 +16,7 @@ const (
 	defaultHttpAddr                                      = "0.0.0.0:8062"
 	defaultMaxRequestBodySize                            = 5e6 + 1e6 // reserve for metadata
 	defaultTimeout                                       = 10 * time.Second
-	defaultDecompressedRequestBodySizeBytesExpectedValue = 50e4 + 1e6 // reserve for metadata
+	defaultDecompressedRequestBodySizeBytesExpectedValue = 0
 )
 
 func createDefaultConfig() component.Config {
