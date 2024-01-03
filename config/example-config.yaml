@@ -1,7 +1,6 @@
 receivers:
   fluentforward:
     endpoint: 0.0.0.0:24224
-  prometheus:
   otlp:
     protocols:
       grpc:
@@ -10,11 +9,12 @@ receivers:
     protocols:
       grpc:
         endpoint: 'localhost:12345'
+  pyroscopereceiver:
 
 processors:
   batch:
     send_batch_size: 1000
-    timeout: 5s
+    timeout: 10s
   memory_limiter:
     check_interval: 2s
     limit_mib: 1800
@@ -51,9 +51,20 @@ processors:
       - include: latency
         action: update
         new_name: traces_spanmetrics_latency
+
 exporters:
   qryn:
     dsn: tcp://clickhouse-server:9000/cloki?username=qryn&password=demo
+    timeout: 10s
+    sending_queue:
+      queue_size: 100
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+  clickhouseprofileexporter:
+    dsn: tcp://0.0.0.0:9000/cloki
     timeout: 10s
     sending_queue:
       queue_size: 100
@@ -73,14 +84,22 @@ extensions:
   zpages:
   memory_ballast:
     size_mib: 1000
-
 service:
+  telemetry:
+    metrics:
+      level: detailed
+  #   logs:
+  #     level: debug
   extensions: [pprof, zpages, health_check]
   pipelines:
     logs:
       receivers: [fluentforward, otlp]
       processors: [memory_limiter, resourcedetection/system, batch]
       exporters: [qryn]
+    logs/profiles:
+      receivers: [pyroscopereceiver]
+      processors: [batch]
+      exporters: [clickhouseprofileexporter]
     traces:
       receivers: [otlp]
       processors: [resourcedetection/system, spanmetrics, batch]
@@ -97,4 +116,3 @@ service:
       processors:
         [memory_limiter, resourcedetection/system, metricstransform, batch]
       exporters: [qryn]
-

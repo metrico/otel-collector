@@ -134,7 +134,9 @@ import (
 	"go.opentelemetry.io/collector/receiver/otlpreceiver"
 	"go.uber.org/multierr"
 
+	"github.com/metrico/otel-collector/exporter/clickhouseprofileexporter"
 	"github.com/metrico/otel-collector/exporter/qrynexporter"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver"
 )
 
 func components() (otelcol.Factories, error) {
@@ -230,6 +232,7 @@ func components() (otelcol.Factories, error) {
 		zipkinreceiver.NewFactory(),
 		zookeeperreceiver.NewFactory(),
 		lokireceiver.NewFactory(),
+		pyroscopereceiver.NewFactory(),
 	}
 	for _, rcv := range factories.Receivers {
 		receivers = append(receivers, rcv)
@@ -241,6 +244,7 @@ func components() (otelcol.Factories, error) {
 
 	exporters := []exporter.Factory{
 		qrynexporter.NewFactory(),
+		clickhouseprofileexporter.NewFactory(),
 		carbonexporter.NewFactory(),
 		fileexporter.NewFactory(),
 		jaegerexporter.NewFactory(),
