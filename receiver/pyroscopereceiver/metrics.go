@@ -9,10 +9,10 @@ import (
 const prefix = "receiver_pyroscope_"
 
 var (
-	otelcolReceiverPyroscopeHttpRequestTotal         metric.Int64Counter
-	otelcolReceiverPyroscopeReceivedPayloadSizeBytes metric.Int64Histogram
-	otelcolReceiverPyroscopeParsedPayloadSizeBytes   metric.Int64Histogram
-	otelcolReceiverPyroscopeHttpResponseTimeMillis   metric.Int64Histogram
+	otelcolReceiverPyroscopeHttpRequestTotal                     metric.Int64Counter
+	otelcolReceiverPyroscopeReceivedPayloadSizeUncompressedBytes metric.Int64Histogram
+	otelcolReceiverPyroscopeParsedPayloadSizeUncompressedBytes   metric.Int64Histogram
+	otelcolReceiverPyroscopeHttpResponseTimeMillis               metric.Int64Histogram
 )
 
 func initMetrics(meter metric.Meter) error {
@@ -23,15 +23,15 @@ func initMetrics(meter metric.Meter) error {
 	); err != nil {
 		return err
 	}
-	if otelcolReceiverPyroscopeReceivedPayloadSizeBytes, err = meter.Int64Histogram(
-		fmt.Sprint(prefix, "received_payload_size_bytes"),
-		metric.WithDescription("Pyroscope receiver received payload size in bytes"),
+	if otelcolReceiverPyroscopeReceivedPayloadSizeUncompressedBytes, err = meter.Int64Histogram(
+		fmt.Sprint(prefix, "received_payload_size_uncompressed_bytes"),
+		metric.WithDescription("Pyroscope receiver received uncompressed payload size in bytes"),
 	); err != nil {
 		return err
 	}
-	if otelcolReceiverPyroscopeParsedPayloadSizeBytes, err = meter.Int64Histogram(
-		fmt.Sprint(prefix, "parsed_payload_size_bytes"),
-		metric.WithDescription("Pyroscope receiver parsed payload size in bytes"),
+	if otelcolReceiverPyroscopeParsedPayloadSizeUncompressedBytes, err = meter.Int64Histogram(
+		fmt.Sprint(prefix, "parsed_payload_size_uncompressed_bytes"),
+		metric.WithDescription("Pyroscope receiver parsed uncompressed payload size in bytes"),
 	); err != nil {
 		return err
 	}

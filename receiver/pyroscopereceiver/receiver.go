@@ -248,7 +248,7 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		return logs, fmt.Errorf("failed to decompress body: %w", err)
 	}
 	// TODO: try measure compressed size
-	otelcolReceiverPyroscopeReceivedPayloadSizeBytes.Record(ctx, int64(buf.Len()), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatJfr, "")))
+	otelcolReceiverPyroscopeReceivedPayloadSizeUncompressedBytes.Record(ctx, int64(buf.Len()), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatJfr, "")))
 	resetHeaders(req)
 
 	md := profile_types.Metadata{SampleRateHertz: 0}
@@ -283,7 +283,7 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		sz += pr.Payload.Len()
 	}
 	// sz may be 0 and it will be recorded
-	otelcolReceiverPyroscopeParsedPayloadSizeBytes.Record(ctx, int64(sz), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatPprof, "")))
+	otelcolReceiverPyroscopeParsedPayloadSizeUncompressedBytes.Record(ctx, int64(sz), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatPprof, "")))
 	return logs, nil
 }
 
