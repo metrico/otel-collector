@@ -5,6 +5,8 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/buf"
 )
 
 type codec uint8
@@ -38,7 +40,7 @@ func NewDecompressor(uncompressedSizeBytes int64, maxUncompressedSizeBytes int64
 }
 
 func (d *Decompressor) readBytes(r io.Reader) (*bytes.Buffer, error) {
-	buf := PrepareBuffer(d.uncompressedSizeBytes)
+	buf := buf.PrepareBuffer(d.uncompressedSizeBytes)
 
 	// read max+1 to validate size via a single Read()
 	lr := io.LimitReader(r, d.maxUncompressedSizeBytes+1)
@@ -69,13 +71,4 @@ func (d *Decompressor) Decompress(r io.Reader, c codec) (*bytes.Buffer, error) {
 	}
 
 	return d.readBytes(dr)
-}
-
-// Pre-allocates a buffer based on heuristics to minimize resize
-func PrepareBuffer(uncompressedSizeBytes int64) *bytes.Buffer {
-	var buf bytes.Buffer
-	// extra space to try avoid realloc where expected size fits enough
-	// TODO: try internal simple statistical model to pre-allocate a buffer
-	buf.Grow(int(uncompressedSizeBytes) + bytes.MinRead)
-	return &buf
 }

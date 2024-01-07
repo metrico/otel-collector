@@ -8,7 +8,7 @@ import (
 	pprof_proto "github.com/google/pprof/profile"
 	jfr_parser "github.com/grafana/jfr-parser/parser"
 	jfr_types "github.com/grafana/jfr-parser/parser/types"
-	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/compress"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/buf"
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
 )
 
@@ -115,7 +115,7 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata, pa
 	for _, pr := range pa.proftab {
 		if nil != pr {
 			// assuming jfr-pprof conversion should not expand memory footprint, transitively applying jfr limit on pprof
-			pr.prof.Payload = compress.PrepareBuffer(parsedBodyUncompressedSizeBytes)
+			pr.prof.Payload = buf.PrepareBuffer(parsedBodyUncompressedSizeBytes)
 			pr.pprof.WriteUncompressed(pr.prof.Payload)
 			ps = append(ps, pr.prof)
 		}
