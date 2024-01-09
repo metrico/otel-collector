@@ -329,8 +329,26 @@ func resetHeaders(req *http.Request) {
 	req.ContentLength = -1
 }
 
+func stringToAnyArray(s []string) []any {
+	res := make([]any, len(s))
+	for i, v := range s {
+		res[i] = v
+	}
+	return res
+}
+
 func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) {
 	m.PutStr("type", prof.Type.Type)
+	s := m.PutEmptySlice("sample_types")
+	err := s.FromRaw(stringToAnyArray(prof.Type.SampleType))
+	if err != nil {
+		panic(err)
+	}
+	s = m.PutEmptySlice("sample_units")
+	err = s.FromRaw(stringToAnyArray(prof.Type.SampleUnit))
+	if err != nil {
+		panic(err)
+	}
 	m.PutStr("period_type", prof.Type.PeriodType)
 	m.PutStr("period_unit", prof.Type.PeriodUnit)
 	m.PutStr("payload_type", fmt.Sprint(prof.PayloadType))

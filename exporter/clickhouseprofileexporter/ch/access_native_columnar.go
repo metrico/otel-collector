@@ -37,6 +37,25 @@ func NewClickhouseAccessNativeColumnar(opts *clickhouse.Options, logger *zap.Log
 	return nc, nil
 }
 
+func valueToStringArray(v pcommon.Value) ([]string, error) {
+	raw := v.AsRaw()
+	var (
+		rawArray []any
+		ok       bool
+	)
+
+	if rawArray, ok = raw.([]any); !ok {
+		return nil, fmt.Errorf("failed to convert value to []any")
+	}
+	res := make([]string, len(rawArray))
+	for i, v := range rawArray {
+		if res[i], ok = v.(string); !ok {
+			return nil, fmt.Errorf("failed to convert value [%d] to string", i)
+		}
+	}
+	return res, nil
+}
+
 // Inserts a profile batch into the clickhouse server using columnar native protocol
 func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	b, err := ch.conn.PrepareBatch(context.Background(), "INSERT INTO profiles_input")
@@ -53,6 +72,7 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	timestamp_ns := make([]uint64, sz)
 	typ := make([]string, sz)
 	service_name := make([]string, sz)
+	sample_types_units := make([][]any, sz)
 	period_type := make([]string, sz)
 	period_unit := make([]string, sz)
 	tags := make([][]tuple, sz)
@@ -77,6 +97,25 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 
 		tmp, _ = m.Get("service_name")
 		service_name[i] = tmp.AsString()
+
+		sample_types, _ := m.Get("sample_types")
+		sample_units, _ := m.Get("sample_units")
+
+		sample_types_array, err := valueToStringArray(sample_types)
+		if err != nil {
+			return err
+		}
+
+		sample_units_array, err := valueToStringArray(sample_units)
+		if err != nil {
+			return err
+		}
+
+		sample_types_units_item := make([]any, len(sample_types_array))
+		for i, v := range sample_types_array {
+			sample_types_units_item[i] = []any{v, sample_units_array[i]}
+		}
+		sample_types_units[i] = sample_types_units_item
 
 		tmp, _ = m.Get("period_type")
 		period_type[i] = tmp.AsString()
@@ -112,22 +151,25 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	if err := b.Column(2).Append(service_name); err != nil {
 		return err
 	}
-	if err := b.Column(3).Append(period_type); err != nil {
+	if err := b.Column(3).Append(sample_types_units); err != nil {
 		return err
 	}
-	if err := b.Column(4).Append(period_unit); err != nil {
+	if err := b.Column(4).Append(period_type); err != nil {
 		return err
 	}
-	if err := b.Column(5).Append(tags); err != nil {
+	if err := b.Column(5).Append(period_unit); err != nil {
 		return err
 	}
-	if err := b.Column(6).Append(duration_ns); err != nil {
+	if err := b.Column(6).Append(tags); err != nil {
 		return err
 	}
-	if err := b.Column(7).Append(payload_type); err != nil {
+	if err := b.Column(7).Append(duration_ns); err != nil {
 		return err
 	}
-	if err := b.Column(8).Append(payload); err != nil {
+	if err := b.Column(8).Append(payload_type); err != nil {
+		return err
+	}
+	if err := b.Column(9).Append(payload); err != nil {
 		return err
 	}
 	return b.Send()
