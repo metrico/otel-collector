@@ -278,7 +278,10 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		for _, l := range pm.labels {
 			tm.PutStr(l.Name, l.Value)
 		}
-		setAttrsFromProfile(pr, m)
+		err = setAttrsFromProfile(pr, m)
+		if err != nil {
+			return logs, fmt.Errorf("failed to parse sample types: %v", err)
+		}
 		r.Body().SetEmptyBytes().FromRaw(pr.Payload.Bytes())
 		sz += pr.Payload.Len()
 	}
@@ -337,21 +340,22 @@ func stringToAnyArray(s []string) []any {
 	return res
 }
 
-func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) {
+func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) error {
 	m.PutStr("type", prof.Type.Type)
 	s := m.PutEmptySlice("sample_types")
 	err := s.FromRaw(stringToAnyArray(prof.Type.SampleType))
 	if err != nil {
-		panic(err)
+		return err
 	}
 	s = m.PutEmptySlice("sample_units")
 	err = s.FromRaw(stringToAnyArray(prof.Type.SampleUnit))
 	if err != nil {
-		panic(err)
+		return err
 	}
 	m.PutStr("period_type", prof.Type.PeriodType)
 	m.PutStr("period_unit", prof.Type.PeriodUnit)
 	m.PutStr("payload_type", fmt.Sprint(prof.PayloadType))
+	return nil
 }
 
 // Starts a http server that receives profiles of supported protocols
