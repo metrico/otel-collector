@@ -72,7 +72,7 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	timestamp_ns := make([]uint64, sz)
 	typ := make([]string, sz)
 	service_name := make([]string, sz)
-	sample_types_units := make([][]any, sz)
+	sample_types_units := make([][]tuple, sz)
 	period_type := make([]string, sz)
 	period_unit := make([]string, sz)
 	tags := make([][]tuple, sz)
@@ -111,9 +111,9 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 			return err
 		}
 
-		sample_types_units_item := make([]any, len(sample_types_array))
+		sample_types_units_item := make([]tuple, len(sample_types_array))
 		for i, v := range sample_types_array {
-			sample_types_units_item[i] = []any{v, sample_units_array[i]}
+			sample_types_units_item[i] = tuple{v, sample_units_array[i]}
 		}
 		sample_types_units[i] = sample_types_units_item
 
