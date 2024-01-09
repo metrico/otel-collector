@@ -8,6 +8,7 @@ import (
 	pprof_proto "github.com/google/pprof/profile"
 	jfr_parser "github.com/grafana/jfr-parser/parser"
 	jfr_types "github.com/grafana/jfr-parser/parser/types"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/buf"
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
 )
 
@@ -54,7 +55,7 @@ func NewJfrPprofParser() *jfrPprofParser {
 }
 
 // Parses the jfr buffer into pprof. The returned slice may be empty without an error.
-func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata, maxDecompressedSizeBytes int64) ([]profile_types.ProfileIR, error) {
+func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata, parsedBodyUncompressedSizeBytes int64) ([]profile_types.ProfileIR, error) {
 	var (
 		period int64
 		event  string
@@ -114,7 +115,7 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata, ma
 	for _, pr := range pa.proftab {
 		if nil != pr {
 			// assuming jfr-pprof conversion should not expand memory footprint, transitively applying jfr limit on pprof
-			pr.prof.Payload = &bytes.Buffer{} // TODO: try simple statistical model to pre-allocate a buffer
+			pr.prof.Payload = buf.PrepareBuffer(parsedBodyUncompressedSizeBytes)
 			pr.pprof.WriteUncompressed(pr.prof.Payload)
 			ps = append(ps, pr.prof)
 		}
