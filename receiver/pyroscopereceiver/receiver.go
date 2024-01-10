@@ -60,7 +60,7 @@ type pyroscopeReceiver struct {
 
 type parser interface {
 	// Parses the given input buffer into the collector's profile IR
-	Parse(buf *bytes.Buffer, md profile_types.Metadata, maxDecompressedSizeBytes int64) ([]profile_types.ProfileIR, error)
+	Parse(buf *bytes.Buffer, md profile_types.Metadata, parsedBodyUncompressedSizeBytes int64) ([]profile_types.ProfileIR, error)
 }
 
 type params struct {
@@ -78,7 +78,7 @@ func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.Cre
 		meter:  set.MeterProvider.Meter(typeStr),
 		next:   consumer,
 	}
-	recv.decompressor = compress.NewDecompressor(recv.cfg.DecompressedRequestBodySizeBytesExpectedValue, recv.cfg.Protocols.Http.MaxRequestBodySize)
+	recv.decompressor = compress.NewDecompressor(recv.cfg.RequestBodyUncompressedSizeBytes, recv.cfg.Protocols.Http.MaxRequestBodySize)
 	recv.httpMux = http.NewServeMux()
 	recv.httpMux.HandleFunc(ingestPath, func(resp http.ResponseWriter, req *http.Request) {
 		recv.httpHandlerIngest(resp, req)
@@ -248,7 +248,7 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		return logs, fmt.Errorf("failed to decompress body: %w", err)
 	}
 	// TODO: try measure compressed size
-	otelcolReceiverPyroscopeReceivedPayloadSizeBytes.Record(ctx, int64(buf.Len()), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatJfr, "")))
+	otelcolReceiverPyroscopeRequestBodyUncompressedSizeBytes.Record(ctx, int64(buf.Len()), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatJfr, "")))
 	resetHeaders(req)
 
 	md := profile_types.Metadata{SampleRateHertz: 0}
@@ -261,7 +261,7 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		md.SampleRateHertz = hz
 	}
 
-	ps, err := pa.Parse(buf, md, recv.cfg.Protocols.Http.MaxRequestBodySize)
+	ps, err := pa.Parse(buf, md, recv.cfg.ParsedBodyUncompressedSizeBytes)
 	if err != nil {
 		return logs, fmt.Errorf("failed to parse pprof: %w", err)
 	}
@@ -278,12 +278,15 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		for _, l := range pm.labels {
 			tm.PutStr(l.Name, l.Value)
 		}
-		setAttrsFromProfile(pr, m)
+		err = setAttrsFromProfile(pr, m)
+		if err != nil {
+			return logs, fmt.Errorf("failed to parse sample types: %v", err)
+		}
 		r.Body().SetEmptyBytes().FromRaw(pr.Payload.Bytes())
 		sz += pr.Payload.Len()
 	}
 	// sz may be 0 and it will be recorded
-	otelcolReceiverPyroscopeParsedPayloadSizeBytes.Record(ctx, int64(sz), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatPprof, "")))
+	otelcolReceiverPyroscopeParsedBodyUncompressedSizeBytes.Record(ctx, int64(sz), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatPprof, "")))
 	return logs, nil
 }
 
@@ -324,16 +327,35 @@ func resetHeaders(req *http.Request) {
 	// reset content-type for the new binary jfr body
 	req.Header.Set("Content-Type", "application/octet-stream")
 	// multipart content-types cannot have encodings so no need to Del() Content-Encoding
-	// reset "Content-Length" to -1 as the size of the decompressed body is unknown
+	// reset "Content-Length" to -1 as the size of the uncompressed body is unknown
 	req.Header.Del("Content-Length")
 	req.ContentLength = -1
 }
 
-func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) {
+func stringToAnyArray(s []string) []any {
+	res := make([]any, len(s))
+	for i, v := range s {
+		res[i] = v
+	}
+	return res
+}
+
+func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) error {
 	m.PutStr("type", prof.Type.Type)
+	s := m.PutEmptySlice("sample_types")
+	err := s.FromRaw(stringToAnyArray(prof.Type.SampleType))
+	if err != nil {
+		return err
+	}
+	s = m.PutEmptySlice("sample_units")
+	err = s.FromRaw(stringToAnyArray(prof.Type.SampleUnit))
+	if err != nil {
+		return err
+	}
 	m.PutStr("period_type", prof.Type.PeriodType)
 	m.PutStr("period_unit", prof.Type.PeriodUnit)
 	m.PutStr("payload_type", fmt.Sprint(prof.PayloadType))
+	return nil
 }
 
 // Starts a http server that receives profiles of supported protocols

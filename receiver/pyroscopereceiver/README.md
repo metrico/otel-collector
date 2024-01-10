@@ -11,7 +11,8 @@ Implements the Pyroscope ingest protocol and conveys the accepted profiles as Op
 
 - `protocols`: sets the application layer protocols that the receiver will serve. See [Supported Protocols](#supported-protocols). Default is http/s on 0.0.0.0:8062 with max request body size of: 5e6 + 1e6.
 - `timeout`: sets the server reponse timeout. Default is 10 seconds.
-- `request_body_size_expected_value`: sets the expected decompressed request body size in bytes to size pipeline buffers and optimize allocations. Default is 0.
+- `request_body_uncompressed_size_bytes`: sets the expected value for uncompressed request body size in bytes to size pipeline buffers and optimize allocations based on exported metrics. Default is 0.
+- `parsed_body_uncompressed_size_bytes`: sets the expected value for uncompressed parsed body size in bytes to size pipeline buffers and optimize allocations based on exported metrics. Default is 0.
 
 ## Example
 
