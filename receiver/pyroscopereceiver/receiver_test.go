@@ -46,7 +46,7 @@ func loadTestData(t *testing.T, filename string) []byte {
 func run(t *testing.T, tests []jfrtest, collectorAddr string, sink *consumertest.LogsSink) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.NoError(t, send(t, collectorAddr, tt.urlParams, tt.jfr), "send shouldn't have been failed")
+			assert.NoError(t, send(collectorAddr, tt.urlParams, tt.jfr), "send shouldn't have been failed")
 			actual := sink.AllLogs()
 			assert.NoError(t, plogtest.CompareLogs(tt.expected, actual[0]))
 			sink.Reset()
@@ -63,9 +63,7 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 				MaxRequestBodySize: defaultMaxRequestBodySize,
 			},
 		},
-		Timeout:                          defaultTimeout,
-		RequestBodyUncompressedSizeBytes: defaultRequestBodyUncompressedSizeBytesExpectedValue,
-		ParsedBodyUncompressedSizeBytes:  defaultParsedBodyUncompressedSizeBytesExpectedValue,
+		Timeout: defaultTimeout,
 	}
 	sink := new(consumertest.LogsSink)
 	set := receivertest.NewNopCreateSettings()
@@ -79,7 +77,7 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 	return addr, sink
 }
 
-func send(t *testing.T, addr string, urlParams map[string]string, jfr string) error {
+func send(addr string, urlParams map[string]string, jfr string) error {
 	data, err := os.ReadFile(jfr)
 	if err != nil {
 		return err
