@@ -13,7 +13,7 @@ type request struct {
 
 // Benchmarks a running otelcol pyroscope write pipeline (collector and Clickhouse).
 // Adjust collectorAddr to bench a your target if needed.
-// Example: go test -benchmem -bench ^BenchmarkPyroscopePipeline$ github.com/metrico/otel-collector/receiver/pyroscopereceiver -benchtime 10s -count 6 -cpu 1 | tee bench.txt
+// Example: go test -bench ^BenchmarkPyroscopePipeline$ github.com/metrico/otel-collector/receiver/pyroscopereceiver -benchtime 10s -count 6 -cpu 1 | tee bench.txt
 func BenchmarkPyroscopePipeline(b *testing.B) {
 	dist := []request{
 		{
@@ -38,6 +38,7 @@ func BenchmarkPyroscopePipeline(b *testing.B) {
 	}
 	collectorAddr := fmt.Sprintf("http://%s%s", defaultHttpAddr, ingestPath)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		j := 0
