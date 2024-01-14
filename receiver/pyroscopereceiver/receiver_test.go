@@ -63,9 +63,7 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 				MaxRequestBodySize: defaultMaxRequestBodySize,
 			},
 		},
-		Timeout:                          defaultTimeout,
-		RequestBodyUncompressedSizeBytes: defaultRequestBodyUncompressedSizeBytesExpectedValue,
-		ParsedBodyUncompressedSizeBytes:  defaultParsedBodyUncompressedSizeBytesExpectedValue,
+		Timeout: defaultTimeout,
 	}
 	sink := new(consumertest.LogsSink)
 	set := receivertest.NewNopCreateSettings()
