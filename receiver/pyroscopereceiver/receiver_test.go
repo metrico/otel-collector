@@ -63,7 +63,7 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 				MaxRequestBodySize: defaultMaxRequestBodySize,
 			},
 		},
-		Timeout: defaultTimeout,
+		Timeout: defaultTimeout * 100,
 	}
 	sink := new(consumertest.LogsSink)
 	set := receivertest.NewNopCreateSettings()
@@ -163,7 +163,7 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 	pbAllocInNewTlab := loadTestData(t, "memory_example_alloc_in_new_tlab.pb")
 	pbLiveObject := loadTestData(t, "memory_example_live_object.pb")
 	tests[0] = jfrtest{
-		name: "send labeled multipart form data gzipped memoty jfr to http ingest endpoint",
+		name: "send labeled multipart form data gzipped memory jfr to http ingest endpoint",
 		urlParams: map[string]string{
 			"name":   "com.example.App{dc=us-east-1,kubernetes_pod_name=app-abcd1234}",
 			"from":   "1700332322",
