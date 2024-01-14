@@ -1,9 +1,10 @@
 package pyroscopereceiver
 
 import (
-	"fmt"
 	"path/filepath"
 	"testing"
+
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/testclient"
 )
 
 type request struct {
@@ -13,7 +14,7 @@ type request struct {
 
 // Benchmarks a running otelcol pyroscope write pipeline (collector and Clickhouse).
 // Adjust collectorAddr to bench a your target if needed.
-// Example: go test -bench ^BenchmarkPyroscopePipeline$ github.com/metrico/otel-collector/receiver/pyroscopereceiver -benchtime 10s -count 6 -cpu 1 | tee bench.txt
+// Example: GOMAXPROCS=1 go test -bench ^BenchmarkPyroscopePipeline$ github.com/metrico/otel-collector/receiver/pyroscopereceiver -benchtime 10s -count 6
 func BenchmarkPyroscopePipeline(b *testing.B) {
 	dist := []request{
 		{
@@ -36,14 +37,14 @@ func BenchmarkPyroscopePipeline(b *testing.B) {
 			jfr: filepath.Join("testdata", "memory_alloc_live_example.jfr"),
 		},
 	}
-	collectorAddr := fmt.Sprintf("http://%s%s", defaultHttpAddr, ingestPath)
+	collectorAddr := "http://0.0.0.0:8062"
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		j := 0
 		for pb.Next() {
-			send(collectorAddr, dist[j].urlParams, dist[j].jfr)
+			testclient.Ingest(collectorAddr, dist[j].urlParams, dist[j].jfr)
 			j = (j + 1) % len(dist)
 		}
 	})
