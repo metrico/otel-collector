@@ -1,17 +1,14 @@
 package pyroscopereceiver
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
-	"mime/multipart"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/testclient"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/plogtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,7 +43,7 @@ func loadTestData(t *testing.T, filename string) []byte {
 func run(t *testing.T, tests []jfrtest, collectorAddr string, sink *consumertest.LogsSink) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.NoError(t, send(t, collectorAddr, tt.urlParams, tt.jfr), "send shouldn't have been failed")
+			assert.NoError(t, testclient.Ingest(collectorAddr, tt.urlParams, tt.jfr), "send shouldn't have been failed")
 			actual := sink.AllLogs()
 			assert.NoError(t, plogtest.CompareLogs(tt.expected, actual[0]))
 			sink.Reset()
@@ -75,50 +72,6 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 	t.Cleanup(func() { require.NoError(t, recv.Shutdown(context.Background())) })
 
 	return addr, sink
-}
-
-func send(t *testing.T, addr string, urlParams map[string]string, jfr string) error {
-	data, err := os.ReadFile(jfr)
-	if err != nil {
-		return err
-	}
-
-	body := new(bytes.Buffer)
-
-	mw := multipart.NewWriter(body)
-	part, err := mw.CreateFormFile("jfr", "jfr")
-	if err != nil {
-		return fmt.Errorf("failed to create form file: %w", err)
-	}
-	gw := gzip.NewWriter(part)
-	if _, err := gw.Write(data); err != nil {
-		return err
-	}
-	gw.Close()
-	mw.Close()
-
-	req, err := http.NewRequest("POST", addr, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Add("Content-Type", mw.FormDataContentType())
-
-	q := req.URL.Query()
-	for k, v := range urlParams {
-		q.Add(k, v)
-	}
-	req.URL.RawQuery = q.Encode()
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-
-	resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("failed to upload profile; http status code: %d", resp.StatusCode)
-	}
-	return nil
 }
 
 func TestPyroscopeIngestJfrCpu(t *testing.T) {
@@ -154,7 +107,7 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 		}}),
 	}
 	addr, sink := startHttpServer(t)
-	collectorAddr := fmt.Sprintf("http://%s%s", addr, ingestPath)
+	collectorAddr := fmt.Sprintf("http://%s", addr)
 	run(t, tests, collectorAddr, sink)
 }
 
@@ -163,7 +116,7 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 	pbAllocInNewTlab := loadTestData(t, "memory_example_alloc_in_new_tlab.pb")
 	pbLiveObject := loadTestData(t, "memory_example_live_object.pb")
 	tests[0] = jfrtest{
-		name: "send labeled multipart form data gzipped memoty jfr to http ingest endpoint",
+		name: "send labeled multipart form data gzipped memory jfr to http ingest endpoint",
 		urlParams: map[string]string{
 			"name":   "com.example.App{dc=us-east-1,kubernetes_pod_name=app-abcd1234}",
 			"from":   "1700332322",
@@ -211,7 +164,7 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 	}
 
 	addr, sink := startHttpServer(t)
-	collectorAddr := fmt.Sprintf("http://%s%s", addr, ingestPath)
+	collectorAddr := fmt.Sprintf("http://%s", addr)
 	run(t, tests, collectorAddr, sink)
 }
 
