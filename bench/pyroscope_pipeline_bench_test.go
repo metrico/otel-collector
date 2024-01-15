@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/testclient"
+	"github.com/stretchr/testify/assert"
 )
 
 type request struct {
@@ -25,7 +26,7 @@ func BenchmarkPyroscopePipeline(b *testing.B) {
 				"format":     "jfr",
 				"sampleRate": "100",
 			},
-			jfr: filepath.Join("testdata", "cortex-dev-01__kafka-0__cpu__0.jfr"),
+			jfr: filepath.Join("..", "receiver", "pyroscopereceiver", "testdata", "cortex-dev-01__kafka-0__cpu__0.jfr"),
 		},
 		{
 			urlParams: map[string]string{
@@ -34,7 +35,7 @@ func BenchmarkPyroscopePipeline(b *testing.B) {
 				"until":  "1700332329",
 				"format": "jfr",
 			},
-			jfr: filepath.Join("testdata", "memory_alloc_live_example.jfr"),
+			jfr: filepath.Join("..", "receiver", "pyroscopereceiver", "testdata", "memory_alloc_live_example.jfr"),
 		},
 	}
 	collectorAddr := "http://0.0.0.0:8062"
@@ -44,7 +45,8 @@ func BenchmarkPyroscopePipeline(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		j := 0
 		for pb.Next() {
-			testclient.Ingest(collectorAddr, dist[j].urlParams, dist[j].jfr)
+			err := testclient.Ingest(collectorAddr, dist[j].urlParams, dist[j].jfr)
+			assert.NoError(b, err, "failed to ingest")
 			j = (j + 1) % len(dist)
 		}
 	})
