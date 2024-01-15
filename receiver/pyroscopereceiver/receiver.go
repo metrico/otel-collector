@@ -56,11 +56,13 @@ type pyroscopeReceiver struct {
 	decompressor *compress.Decompressor
 	httpServer   *http.Server
 	shutdownWg   sync.WaitGroup
+
+	uncompressedBufPool *sync.Pool
 }
 
 type parser interface {
 	// Parses the given input buffer into the collector's profile IR
-	Parse(buf *bytes.Buffer, md profile_types.Metadata, parsedBodyUncompressedSizeBytes int64) ([]profile_types.ProfileIR, error)
+	Parse(buf *bytes.Buffer, md profile_types.Metadata) ([]profile_types.ProfileIR, error)
 }
 
 type params struct {
@@ -72,13 +74,14 @@ type params struct {
 
 func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.CreateSettings) (*pyroscopeReceiver, error) {
 	recv := &pyroscopeReceiver{
-		cfg:    cfg,
-		set:    set,
-		logger: set.Logger,
-		meter:  set.MeterProvider.Meter(typeStr),
-		next:   consumer,
+		cfg:                 cfg,
+		set:                 set,
+		logger:              set.Logger,
+		meter:               set.MeterProvider.Meter(typeStr),
+		next:                consumer,
+		uncompressedBufPool: &sync.Pool{},
 	}
-	recv.decompressor = compress.NewDecompressor(recv.cfg.RequestBodyUncompressedSizeBytes, recv.cfg.Protocols.Http.MaxRequestBodySize)
+	recv.decompressor = compress.NewDecompressor(recv.cfg.Protocols.Http.MaxRequestBodySize)
 	recv.httpMux = http.NewServeMux()
 	recv.httpMux.HandleFunc(ingestPath, func(resp http.ResponseWriter, req *http.Request) {
 		recv.httpHandlerIngest(resp, req)
@@ -151,7 +154,7 @@ func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWri
 		}
 
 		otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
-		otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().Unix()-startTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
+		otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().UnixMilli()-startTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
 		writeResponseNoContent(resp)
 	}()
 	return c
@@ -221,6 +224,20 @@ func newOtelcolAttrSetHttp(service string, errorCode string) *attribute.Set {
 	return &s
 }
 
+func acquireBuf(p *sync.Pool) *bytes.Buffer {
+	v := p.Get()
+	if v == nil {
+		v = new(bytes.Buffer)
+	}
+	buf := v.(*bytes.Buffer)
+	return buf
+}
+
+func releaseBuf(p *sync.Pool, buf *bytes.Buffer) {
+	buf.Reset()
+	p.Put(buf)
+}
+
 func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request, pm params) (plog.Logs, error) {
 	var (
 		tmp []string
@@ -243,7 +260,12 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 	}
 	defer f.Close()
 
-	buf, err := recv.decompressor.Decompress(f, compress.Gzip)
+	buf := acquireBuf(recv.uncompressedBufPool)
+	defer func() {
+		releaseBuf(recv.uncompressedBufPool, buf)
+	}()
+
+	err = recv.decompressor.Decompress(f, compress.Gzip, buf)
 	if err != nil {
 		return logs, fmt.Errorf("failed to decompress body: %w", err)
 	}
@@ -261,7 +283,7 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		md.SampleRateHertz = hz
 	}
 
-	ps, err := pa.Parse(buf, md, recv.cfg.ParsedBodyUncompressedSizeBytes)
+	ps, err := pa.Parse(buf, md)
 	if err != nil {
 		return logs, fmt.Errorf("failed to parse pprof: %w", err)
 	}
