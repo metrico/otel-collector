@@ -26,18 +26,21 @@ func initMetrics(meter metric.Meter) error {
 	if otelcolReceiverPyroscopeRequestBodyUncompressedSizeBytes, err = meter.Int64Histogram(
 		fmt.Sprint(prefix, "request_body_uncompressed_size_bytes"),
 		metric.WithDescription("Pyroscope receiver uncompressed request body size in bytes"),
+		metric.WithExplicitBucketBoundaries(0, 1024, 4096, 16384, 32768, 65536, 131072, 262144, 524288, 1048576),
 	); err != nil {
 		return err
 	}
 	if otelcolReceiverPyroscopeParsedBodyUncompressedSizeBytes, err = meter.Int64Histogram(
 		fmt.Sprint(prefix, "parsed_body_uncompressed_size_bytes"),
 		metric.WithDescription("Pyroscope receiver uncompressed parsed body size in bytes"),
+		metric.WithExplicitBucketBoundaries(0, 1024, 4096, 16384, 32768, 65536, 131072, 262144, 524288, 1048576),
 	); err != nil {
 		return err
 	}
 	if otelcolReceiverPyroscopeHttpResponseTimeMillis, err = meter.Int64Histogram(
 		fmt.Sprint(prefix, "http_response_time_millis"),
 		metric.WithDescription("Pyroscope receiver http response time in millis"),
+		metric.WithExplicitBucketBoundaries(0, 5, 10, 20, 50, 100, 200, 500, 1000, 5000),
 	); err != nil {
 		return err
 	}
