@@ -3,12 +3,12 @@ package jfrparser
 import (
 	"bytes"
 	"fmt"
+	"io"
+
 	pprof_proto "github.com/google/pprof/profile"
 	jfr_parser "github.com/grafana/jfr-parser/parser"
 	jfr_types "github.com/grafana/jfr-parser/parser/types"
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
-	"go.uber.org/zap"
-	"io"
 )
 
 type sampleType uint8
@@ -32,7 +32,6 @@ type profileWrapper struct {
 
 type jfrPprofParser struct {
 	jfrParser *jfr_parser.Parser
-	logger    *zap.Logger
 	proftab   [sampleTypeCount]*profileWrapper                  // <sample type, (profile, pprof)>
 	samptab   [sampleTypeCount]map[uint32]uint32                // <extern jfr stacktrace id,matching pprof sample array index>
 	loctab    [sampleTypeCount]map[uint32]*pprof_proto.Location // <extern jfr funcid, pprof location>
@@ -112,12 +111,18 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata) ([
 
 	ps := make([]profile_types.ProfileIR, 0)
 	for _, pr := range pa.proftab {
-		if nil != pr {
-			// assuming jfr-pprof conversion should not expand memory footprint, transitively applying jfr limit on pprof
-			pr.prof.Payload = new(bytes.Buffer)
-			pr.pprof.WriteUncompressed(pr.prof.Payload)
-			ps = append(ps, pr.prof)
+		if nil == pr {
+			continue
 		}
+		// assuming jfr-pprof conversion should not expand memory footprint, transitively applying jfr limit on pprof
+		pr.prof.Payload = new(bytes.Buffer)
+		pr.pprof.WriteUncompressed(pr.prof.Payload)
+
+		// Calculate values_agg based on the requirements
+		valuesAgg := calculateValuesAgg(pr.pprof)
+		pr.prof.ValueAggregation = valuesAgg
+
+		ps = append(ps, pr.prof)
 	}
 	return ps, nil
 }
@@ -208,19 +213,16 @@ func (pa *jfrPprofParser) addProfile(sampleType sampleType) *profileWrapper {
 	for i, t := range pw.prof.Type.SampleType {
 		pa.appendSampleType(pw.pprof, t, pw.prof.Type.SampleUnit[i])
 	}
-	// Calculate values_agg based on the requirements
-	valuesAgg := calculateValuesAgg(pw.pprof)
-	pw.prof.ValueAggregation = valuesAgg
 
 	return pw
 
 }
-func calculateValuesAgg(samples *pprof_proto.Profile) []profile_types.Tuple {
-	var valuesAgg []profile_types.Tuple
+func calculateValuesAgg(samples *pprof_proto.Profile) []profile_types.SampleType {
+	var valuesAgg []profile_types.SampleType
 	// Loop through each sample type
 	for j, st := range samples.SampleType {
 		sum, count := calculateSumAndCount(samples, j)
-		valuesAgg = append(valuesAgg, profile_types.Tuple{fmt.Sprintf("%s:%s", st.Type, st.Unit), sum, count})
+		valuesAgg = append(valuesAgg, profile_types.SampleType{fmt.Sprintf("%s:%s", st.Type, st.Unit), sum, count})
 	}
 
 	return valuesAgg
@@ -257,9 +259,6 @@ func (pa *jfrPprofParser) getSample(sampleType sampleType, prof *pprof_proto.Pro
 	if !ok {
 		return nil
 	}
-	//if len(prof.Sample) <= int(i) {
-	//	return nil
-	//}
 	return prof.Sample[i]
 
 }

@@ -33,7 +33,7 @@ type ProfileIR struct {
 	ValueAggregation interface{}
 }
 
-type Tuple struct {
+type SampleType struct {
 	Key   string
 	Sum   int64
 	Count int32

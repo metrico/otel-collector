@@ -361,13 +361,11 @@ func stringToAnyArray(s []string) []any {
 	}
 	return res
 }
-func entitiesToStrings(entities []profile_types.Tuple) []any {
+func entitiesToStrings(entities []profile_types.SampleType) []any {
 	var result []any
 	for _, entity := range entities {
 		result = append(result,
-			entity.Key,
-			fmt.Sprintf("%v", entity.Sum),
-			fmt.Sprintf("%v", entity.Count),
+			[]any{entity.Key, entity.Sum, entity.Count},
 		)
 	}
 	return result
@@ -387,8 +385,8 @@ func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) error {
 	if err != nil {
 		return err
 	}
-	// Correct type assertion for []profile.Tuple
-	result := prof.ValueAggregation.([]profile_types.Tuple)
+	// Correct type assertion for []profile.SampleType
+	result := prof.ValueAggregation.([]profile_types.SampleType)
 	s = m.PutEmptySlice("values_agg")
 
 	err = s.FromRaw(entitiesToStrings(result))

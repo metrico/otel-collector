@@ -3,12 +3,13 @@ package ch
 import (
 	"context"
 	"fmt"
+	"strconv"
+
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.uber.org/zap"
-	"strconv"
 )
 
 // schema reference: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
@@ -115,18 +116,14 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 			return err
 		}
 
-		values_agg_raw, _ := m.Get("values_agg")
-
-		test, err := valueToStringArray(values_agg_raw)
-		if err != nil {
-			return err
+		values_agg_raw, ok := m.Get("values_agg")
+		if ok {
+			values_agg_tuple, err := valueAggToTuple(&values_agg_raw)
+			if err != nil {
+				return err
+			}
+			values_agg[i] = append(values_agg[i], values_agg_tuple...)
 		}
-
-		values_agg_array, err := valueToTuples(test)
-		if err != nil {
-			return err
-		}
-		values_agg[i] = values_agg_array
 
 		sample_types_units_item := make([]tuple, len(sample_types_array))
 		for i, v := range sample_types_array {
@@ -201,22 +198,18 @@ func (ch *clickhouseAccessNativeColumnar) Shutdown() error {
 	return ch.conn.Close()
 }
 
-func valueToTuples(input []string) ([]tuple, error) {
-	var tuples []tuple
-	// Type assert each item to the expected types
-	field1 := input[0]
-	field2 := input[1]
-	field3 := input[2]
-
-	count, _ := strconv.Atoi(field2)
-	sum, _ := strconv.Atoi(field3)
-	tuple := tuple{
-		field1,
-		int64(count),
-		int32(sum),
+func valueAggToTuple(value *pcommon.Value) ([]tuple, error) {
+	var res []tuple
+	for _, value_agg_any := range value.AsRaw().([]any) {
+		value_agg_any_array, ok := value_agg_any.([]any)
+		if !ok || len(value_agg_any_array) != 3 {
+			return nil, fmt.Errorf("failed to convert value_agg to tuples")
+		}
+		res = append(res, tuple{
+			value_agg_any_array[0],
+			value_agg_any_array[1],
+			int32(value_agg_any_array[2].(int64)),
+		})
 	}
-
-	tuples = append(tuples, tuple)
-
-	return tuples, nil
+	return res, nil
 }
