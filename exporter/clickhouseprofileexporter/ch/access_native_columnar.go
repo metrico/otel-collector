@@ -18,11 +18,7 @@ type clickhouseAccessNativeColumnar struct {
 
 	logger *zap.Logger
 }
-type AggsTuple struct {
-	Key   string
-	Sum   int64
-	Count int32
-}
+
 type tuple []any
 
 // Connects to clickhouse and checks the connection's health, returning a new native client
