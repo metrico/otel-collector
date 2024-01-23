@@ -339,22 +339,45 @@ func stringToAnyArray(s []string) []any {
 	}
 	return res
 }
+func entitiesToStrings(entities []profile_types.Tuple) []any {
+	var result []any
+	for _, entity := range entities {
+		result = append(result,
+			entity.Key,
+			fmt.Sprintf("%v", entity.Sum),
+			fmt.Sprintf("%v", entity.Count),
+		)
+	}
+	return result
+}
 
 func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) error {
 	m.PutStr("type", prof.Type.Type)
 	s := m.PutEmptySlice("sample_types")
+
 	err := s.FromRaw(stringToAnyArray(prof.Type.SampleType))
 	if err != nil {
 		return err
 	}
+
 	s = m.PutEmptySlice("sample_units")
 	err = s.FromRaw(stringToAnyArray(prof.Type.SampleUnit))
+	if err != nil {
+		return err
+	}
+	// Correct type assertion for []profile.Tuple
+	result := prof.ValueAggregation.([]profile_types.Tuple)
+	s = m.PutEmptySlice("values_agg")
+
+	err = s.FromRaw(entitiesToStrings(result))
+
 	if err != nil {
 		return err
 	}
 	m.PutStr("period_type", prof.Type.PeriodType)
 	m.PutStr("period_unit", prof.Type.PeriodUnit)
 	m.PutStr("payload_type", fmt.Sprint(prof.PayloadType))
+
 	return nil
 }
 
