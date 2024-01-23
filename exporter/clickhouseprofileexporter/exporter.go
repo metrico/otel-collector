@@ -64,11 +64,11 @@ func newClickhouseProfileExporter(ctx context.Context, set *exporter.CreateSetti
 func (exp *clickhouseProfileExporter) send(ctx context.Context, logs plog.Logs) error {
 	start := time.Now().UnixMilli()
 	if err := exp.ch.InsertBatch(logs); err != nil {
-		otelcolExporterClickhouseProfileFlushTimeMillis.Record(ctx, time.Now().UnixMilli()-start, metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError)))
+		otelcolExporterClickhouseProfileBatchInsertTimeMillis.Record(ctx, time.Now().UnixMilli()-start, metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError)))
 		exp.logger.Error(fmt.Sprintf("failed to insert batch: [%s]", err.Error()))
 		return err
 	}
-	otelcolExporterClickhouseProfileFlushTimeMillis.Record(ctx, time.Now().UnixMilli()-start, metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeSuccess)))
+	otelcolExporterClickhouseProfileBatchInsertTimeMillis.Record(ctx, time.Now().UnixMilli()-start, metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeSuccess)))
 	exp.logger.Info("inserted batch", zap.Int("size", logs.ResourceLogs().Len()))
 	return nil
 }

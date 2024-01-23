@@ -32,10 +32,9 @@ type profileWrapper struct {
 
 type jfrPprofParser struct {
 	jfrParser *jfr_parser.Parser
-
-	proftab [sampleTypeCount]*profileWrapper                  // <sample type, (profile, pprof)>
-	samptab [sampleTypeCount]map[uint32]uint32                // <extern jfr stacktrace id,matching pprof sample array index>
-	loctab  [sampleTypeCount]map[uint32]*pprof_proto.Location // <extern jfr funcid, pprof location>
+	proftab   [sampleTypeCount]*profileWrapper                  // <sample type, (profile, pprof)>
+	samptab   [sampleTypeCount]map[uint32]uint32                // <extern jfr stacktrace id,matching pprof sample array index>
+	loctab    [sampleTypeCount]map[uint32]*pprof_proto.Location // <extern jfr funcid, pprof location>
 }
 
 var typetab = []profile_types.ProfileType{
@@ -112,12 +111,18 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata) ([
 
 	ps := make([]profile_types.ProfileIR, 0)
 	for _, pr := range pa.proftab {
-		if nil != pr {
-			// assuming jfr-pprof conversion should not expand memory footprint, transitively applying jfr limit on pprof
-			pr.prof.Payload = new(bytes.Buffer)
-			pr.pprof.WriteUncompressed(pr.prof.Payload)
-			ps = append(ps, pr.prof)
+		if nil == pr {
+			continue
 		}
+		// assuming jfr-pprof conversion should not expand memory footprint, transitively applying jfr limit on pprof
+		pr.prof.Payload = new(bytes.Buffer)
+		pr.pprof.WriteUncompressed(pr.prof.Payload)
+
+		// Calculate values_agg based on the requirements
+		valuesAgg := calculateValuesAgg(pr.pprof)
+		pr.prof.ValueAggregation = valuesAgg
+
+		ps = append(ps, pr.prof)
 	}
 	return ps, nil
 }
@@ -204,12 +209,38 @@ func (pa *jfrPprofParser) addProfile(sampleType sampleType) *profileWrapper {
 		pprof: &pprof_proto.Profile{},
 	}
 	pa.proftab[sampleType] = pw
-
 	// add sample types and units to keep the pprof valid for libraries
 	for i, t := range pw.prof.Type.SampleType {
 		pa.appendSampleType(pw.pprof, t, pw.prof.Type.SampleUnit[i])
 	}
+
 	return pw
+
+}
+func calculateValuesAgg(samples *pprof_proto.Profile) []profile_types.SampleType {
+	var valuesAgg []profile_types.SampleType
+	// Loop through each sample type
+	for j, st := range samples.SampleType {
+		sum, count := calculateSumAndCount(samples, j)
+		valuesAgg = append(valuesAgg, profile_types.SampleType{fmt.Sprintf("%s:%s", st.Type, st.Unit), sum, count})
+	}
+
+	return valuesAgg
+}
+
+func calculateSumAndCount(samples *pprof_proto.Profile, sampleTypeIndex int) (int64, int32) {
+	var sum int64
+	count := int32(len(samples.Sample))
+
+	for _, sample := range samples.Sample {
+		// Check if the sample has a value for the specified sample type
+		if sampleTypeIndex < len(sample.Value) {
+			// Accumulate the value for the specified sample type
+			sum += sample.Value[sampleTypeIndex]
+		}
+	}
+
+	return sum, count
 }
 
 func (pa *jfrPprofParser) appendSampleType(prof *pprof_proto.Profile, typ, unit string) {
@@ -229,6 +260,7 @@ func (pa *jfrPprofParser) getSample(sampleType sampleType, prof *pprof_proto.Pro
 		return nil
 	}
 	return prof.Sample[i]
+
 }
 
 func (pa *jfrPprofParser) appendSample(sampleType sampleType, prof *pprof_proto.Profile, locations []*pprof_proto.Location, values []int64, externStacktraceRef uint32) {

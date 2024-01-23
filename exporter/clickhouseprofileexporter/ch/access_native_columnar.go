@@ -72,6 +72,7 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	timestamp_ns := make([]uint64, sz)
 	typ := make([]string, sz)
 	service_name := make([]string, sz)
+	values_agg := make([][]tuple, sz)
 	sample_types_units := make([][]tuple, sz)
 	period_type := make([]string, sz)
 	period_unit := make([]string, sz)
@@ -89,7 +90,6 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	for i := 0; i < sz; i++ {
 		r = rl.At(i).ScopeLogs().At(0).LogRecords().At(0)
 		m = r.Attributes()
-
 		timestamp_ns[i] = uint64(r.Timestamp())
 
 		tmp, _ = m.Get("type")
@@ -99,6 +99,7 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 		service_name[i] = tmp.AsString()
 
 		sample_types, _ := m.Get("sample_types")
+
 		sample_units, _ := m.Get("sample_units")
 
 		sample_types_array, err := valueToStringArray(sample_types)
@@ -111,12 +112,21 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 			return err
 		}
 
+		values_agg_raw, ok := m.Get("values_agg")
+		if ok {
+			values_agg_tuple, err := valueAggToTuple(&values_agg_raw)
+			if err != nil {
+				return err
+			}
+			values_agg[i] = append(values_agg[i], values_agg_tuple...)
+		}
+
 		sample_types_units_item := make([]tuple, len(sample_types_array))
 		for i, v := range sample_types_array {
+
 			sample_types_units_item[i] = tuple{v, sample_units_array[i]}
 		}
 		sample_types_units[i] = sample_types_units_item
-
 		tmp, _ = m.Get("period_type")
 		period_type[i] = tmp.AsString()
 
@@ -169,7 +179,11 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	if err := b.Column(8).Append(payload_type); err != nil {
 		return err
 	}
+
 	if err := b.Column(9).Append(payload); err != nil {
+		return err
+	}
+	if err := b.Column(10).Append(values_agg); err != nil {
 		return err
 	}
 	return b.Send()
@@ -178,4 +192,20 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 // Closes the clickhouse connection pool
 func (ch *clickhouseAccessNativeColumnar) Shutdown() error {
 	return ch.conn.Close()
+}
+
+func valueAggToTuple(value *pcommon.Value) ([]tuple, error) {
+	var res []tuple
+	for _, value_agg_any := range value.AsRaw().([]any) {
+		value_agg_any_array, ok := value_agg_any.([]any)
+		if !ok || len(value_agg_any_array) != 3 {
+			return nil, fmt.Errorf("failed to convert value_agg to tuples")
+		}
+		res = append(res, tuple{
+			value_agg_any_array[0],
+			value_agg_any_array[1],
+			int32(value_agg_any_array[2].(int64)),
+		})
+	}
+	return res, nil
 }
