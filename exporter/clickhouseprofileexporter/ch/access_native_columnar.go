@@ -3,13 +3,12 @@ package ch
 import (
 	"context"
 	"fmt"
-	"strconv"
-
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.uber.org/zap"
+	"strconv"
 )
 
 // schema reference: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
@@ -18,7 +17,11 @@ type clickhouseAccessNativeColumnar struct {
 
 	logger *zap.Logger
 }
-
+type AggsTuple struct {
+	Key   string
+	Sum   int64
+	Count int32
+}
 type tuple []any
 
 // Connects to clickhouse and checks the connection's health, returning a new native client
@@ -72,6 +75,7 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	timestamp_ns := make([]uint64, sz)
 	typ := make([]string, sz)
 	service_name := make([]string, sz)
+	values_agg := make([][]tuple, sz)
 	sample_types_units := make([][]tuple, sz)
 	period_type := make([]string, sz)
 	period_unit := make([]string, sz)
@@ -89,7 +93,6 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	for i := 0; i < sz; i++ {
 		r = rl.At(i).ScopeLogs().At(0).LogRecords().At(0)
 		m = r.Attributes()
-
 		timestamp_ns[i] = uint64(r.Timestamp())
 
 		tmp, _ = m.Get("type")
@@ -99,6 +102,7 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 		service_name[i] = tmp.AsString()
 
 		sample_types, _ := m.Get("sample_types")
+
 		sample_units, _ := m.Get("sample_units")
 
 		sample_types_array, err := valueToStringArray(sample_types)
@@ -111,12 +115,25 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 			return err
 		}
 
+		values_agg_raw, _ := m.Get("values_agg")
+
+		test, err := valueToStringArray(values_agg_raw)
+		if err != nil {
+			return err
+		}
+
+		values_agg_array, err := valueToTuples(test)
+		if err != nil {
+			return err
+		}
+		values_agg[i] = values_agg_array
+
 		sample_types_units_item := make([]tuple, len(sample_types_array))
 		for i, v := range sample_types_array {
+
 			sample_types_units_item[i] = tuple{v, sample_units_array[i]}
 		}
 		sample_types_units[i] = sample_types_units_item
-
 		tmp, _ = m.Get("period_type")
 		period_type[i] = tmp.AsString()
 
@@ -169,7 +186,11 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	if err := b.Column(8).Append(payload_type); err != nil {
 		return err
 	}
+
 	if err := b.Column(9).Append(payload); err != nil {
+		return err
+	}
+	if err := b.Column(10).Append(values_agg); err != nil {
 		return err
 	}
 	return b.Send()
@@ -178,4 +199,24 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 // Closes the clickhouse connection pool
 func (ch *clickhouseAccessNativeColumnar) Shutdown() error {
 	return ch.conn.Close()
+}
+
+func valueToTuples(input []string) ([]tuple, error) {
+	var tuples []tuple
+	// Type assert each item to the expected types
+	field1 := input[0]
+	field2 := input[1]
+	field3 := input[2]
+
+	count, _ := strconv.Atoi(field2)
+	sum, _ := strconv.Atoi(field3)
+	tuple := tuple{
+		field1,
+		int64(count),
+		int32(sum),
+	}
+
+	tuples = append(tuples, tuple)
+
+	return tuples, nil
 }

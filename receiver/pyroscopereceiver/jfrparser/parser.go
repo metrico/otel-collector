@@ -3,12 +3,12 @@ package jfrparser
 import (
 	"bytes"
 	"fmt"
-	"io"
-
 	pprof_proto "github.com/google/pprof/profile"
 	jfr_parser "github.com/grafana/jfr-parser/parser"
 	jfr_types "github.com/grafana/jfr-parser/parser/types"
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
+	"go.uber.org/zap"
+	"io"
 )
 
 type sampleType uint8
@@ -32,10 +32,10 @@ type profileWrapper struct {
 
 type jfrPprofParser struct {
 	jfrParser *jfr_parser.Parser
-
-	proftab [sampleTypeCount]*profileWrapper                  // <sample type, (profile, pprof)>
-	samptab [sampleTypeCount]map[uint32]uint32                // <extern jfr stacktrace id,matching pprof sample array index>
-	loctab  [sampleTypeCount]map[uint32]*pprof_proto.Location // <extern jfr funcid, pprof location>
+	logger    *zap.Logger
+	proftab   [sampleTypeCount]*profileWrapper                  // <sample type, (profile, pprof)>
+	samptab   [sampleTypeCount]map[uint32]uint32                // <extern jfr stacktrace id,matching pprof sample array index>
+	loctab    [sampleTypeCount]map[uint32]*pprof_proto.Location // <extern jfr funcid, pprof location>
 }
 
 var typetab = []profile_types.ProfileType{
@@ -204,12 +204,41 @@ func (pa *jfrPprofParser) addProfile(sampleType sampleType) *profileWrapper {
 		pprof: &pprof_proto.Profile{},
 	}
 	pa.proftab[sampleType] = pw
-
 	// add sample types and units to keep the pprof valid for libraries
 	for i, t := range pw.prof.Type.SampleType {
 		pa.appendSampleType(pw.pprof, t, pw.prof.Type.SampleUnit[i])
 	}
+	// Calculate values_agg based on the requirements
+	valuesAgg := calculateValuesAgg(pw.pprof)
+	pw.prof.ValueAggregation = valuesAgg
+
 	return pw
+
+}
+func calculateValuesAgg(samples *pprof_proto.Profile) []profile_types.Tuple {
+	var valuesAgg []profile_types.Tuple
+	// Loop through each sample type
+	for j, st := range samples.SampleType {
+		sum, count := calculateSumAndCount(samples, j)
+		valuesAgg = append(valuesAgg, profile_types.Tuple{fmt.Sprintf("%s:%s", st.Type, st.Unit), sum, count})
+	}
+
+	return valuesAgg
+}
+
+func calculateSumAndCount(samples *pprof_proto.Profile, sampleTypeIndex int) (int64, int32) {
+	var sum int64
+	count := int32(len(samples.Sample))
+
+	for _, sample := range samples.Sample {
+		// Check if the sample has a value for the specified sample type
+		if sampleTypeIndex < len(sample.Value) {
+			// Accumulate the value for the specified sample type
+			sum += sample.Value[sampleTypeIndex]
+		}
+	}
+
+	return sum, count
 }
 
 func (pa *jfrPprofParser) appendSampleType(prof *pprof_proto.Profile, typ, unit string) {
@@ -228,7 +257,11 @@ func (pa *jfrPprofParser) getSample(sampleType sampleType, prof *pprof_proto.Pro
 	if !ok {
 		return nil
 	}
+	//if len(prof.Sample) <= int(i) {
+	//	return nil
+	//}
 	return prof.Sample[i]
+
 }
 
 func (pa *jfrPprofParser) appendSample(sampleType sampleType, prof *pprof_proto.Profile, locations []*pprof_proto.Location, values []int64, externStacktraceRef uint32) {

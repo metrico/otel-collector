@@ -27,7 +27,14 @@ type ProfileType struct {
 
 // Parser IR for profile processing
 type ProfileIR struct {
-	Type        ProfileType
-	Payload     *bytes.Buffer
-	PayloadType PayloadType
+	Type             ProfileType
+	Payload          *bytes.Buffer
+	PayloadType      PayloadType
+	ValueAggregation interface{}
+}
+
+type Tuple struct {
+	Key   string
+	Sum   int64
+	Count int32
 }
