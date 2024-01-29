@@ -381,10 +381,6 @@ func CoreComponents() (
 		jsonlogencodingextension.NewFactory(),
 		textencodingextension.NewFactory(),
 		zipkinencodingextension.NewFactory(),
-		ballastextension.NewFactory(),
-		healthcheckextension.NewFactory(),
-		pprofextension.NewFactory(),
-		zpagesextension.NewFactory(),
 	)
 	errs = multierr.Append(errs, err)
 
