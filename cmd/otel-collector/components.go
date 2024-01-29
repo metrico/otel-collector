@@ -45,7 +45,6 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/attributesprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/cumulativetodeltaprocessor"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/datadogprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatorateprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/filterprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/groupbyattrsprocessor"
@@ -56,7 +55,6 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/metricstransformprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/probabilisticsamplerprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/redactionprocessor"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/remotetapprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourcedetectionprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourceprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/routingprocessor"
@@ -64,7 +62,6 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/servicegraphprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/spanmetricsprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/spanprocessor"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/sumologicprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/tailsamplingprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/activedirectorydsreceiver"
@@ -183,7 +180,35 @@ func components() (otelcol.Factories, error) {
 		return otelcol.Factories{}, err
 	}
 
-	var extensions []extension.Factory
+	extensions := []extension.Factory{
+		asapauthextension.NewFactory(),
+		awsproxy.NewFactory(),
+		basicauthextension.NewFactory(),
+		bearertokenauthextension.NewFactory(),
+		headerssetterextension.NewFactory(),
+		healthcheckextension.NewFactory(),
+		httpforwarder.NewFactory(),
+		jaegerremotesampling.NewFactory(),
+		oauth2clientauthextension.NewFactory(),
+		ecsobserver.NewFactory(),
+		ecstaskobserver.NewFactory(),
+		hostobserver.NewFactory(),
+		k8sobserver.NewFactory(),
+		dockerobserver.NewFactory(),
+		oidcauthextension.NewFactory(),
+		opampextension.NewFactory(),
+		pprofextension.NewFactory(),
+		remotetapextension.NewFactory(),
+		sigv4authextension.NewFactory(),
+		solarwindsapmsettingsextension.NewFactory(),
+		filestorage.NewFactory(),
+		dbstorage.NewFactory(),
+		otlpencodingextension.NewFactory(),
+		jaegerencodingextension.NewFactory(),
+		jsonlogencodingextension.NewFactory(),
+		textencodingextension.NewFactory(),
+		zipkinencodingextension.NewFactory(),
+	}
 	for _, ext := range factories.Extensions {
 		extensions = append(extensions, ext)
 	}
@@ -342,6 +367,22 @@ func components() (otelcol.Factories, error) {
 		errs = append(errs, err)
 	}
 
+	connectors := []connector.Factory{
+		countconnector.NewFactory(),
+		datadogconnector.NewFactory(),
+		exceptionsconnector.NewFactory(),
+		routingconnector.NewFactory(),
+		servicegraphconnector.NewFactory(),
+		spanmetricsconnector.NewFactory(),
+	}
+	for _, connector := range factories.Connectors {
+		connectors = append(connectors, connector)
+	}
+	factories.Connectors, err = connector.MakeFactoryMap(connectors...)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
 	return factories, multierr.Combine(errs...)
 }
 
@@ -354,33 +395,6 @@ func CoreComponents() (
 	extensions, err := extension.MakeFactoryMap(
 		zpagesextension.NewFactory(),
 		ballastextension.NewFactory(),
-		asapauthextension.NewFactory(),
-		awsproxy.NewFactory(),
-		basicauthextension.NewFactory(),
-		bearertokenauthextension.NewFactory(),
-		headerssetterextension.NewFactory(),
-		healthcheckextension.NewFactory(),
-		httpforwarder.NewFactory(),
-		jaegerremotesampling.NewFactory(),
-		oauth2clientauthextension.NewFactory(),
-		ecsobserver.NewFactory(),
-		ecstaskobserver.NewFactory(),
-		hostobserver.NewFactory(),
-		k8sobserver.NewFactory(),
-		dockerobserver.NewFactory(),
-		oidcauthextension.NewFactory(),
-		opampextension.NewFactory(),
-		pprofextension.NewFactory(),
-		remotetapextension.NewFactory(),
-		sigv4authextension.NewFactory(),
-		solarwindsapmsettingsextension.NewFactory(),
-		filestorage.NewFactory(),
-		dbstorage.NewFactory(),
-		otlpencodingextension.NewFactory(),
-		jaegerencodingextension.NewFactory(),
-		jsonlogencodingextension.NewFactory(),
-		textencodingextension.NewFactory(),
-		zipkinencodingextension.NewFactory(),
 	)
 	errs = multierr.Append(errs, err)
 
@@ -399,39 +413,12 @@ func CoreComponents() (
 	processors, err := processor.MakeFactoryMap(
 		batchprocessor.NewFactory(),
 		memorylimiterprocessor.NewFactory(),
-		attributesprocessor.NewFactory(),
-		cumulativetodeltaprocessor.NewFactory(),
-		datadogprocessor.NewFactory(),
-		deltatorateprocessor.NewFactory(),
-		filterprocessor.NewFactory(),
-		groupbyattrsprocessor.NewFactory(),
-		groupbytraceprocessor.NewFactory(),
-		k8sattributesprocessor.NewFactory(),
-		metricsgenerationprocessor.NewFactory(),
-		metricstransformprocessor.NewFactory(),
-		probabilisticsamplerprocessor.NewFactory(),
-		redactionprocessor.NewFactory(),
-		resourcedetectionprocessor.NewFactory(),
-		resourceprocessor.NewFactory(),
-		routingprocessor.NewFactory(),
-		servicegraphprocessor.NewFactory(),
-		spanmetricsprocessor.NewFactory(),
-		sumologicprocessor.NewFactory(),
-		spanprocessor.NewFactory(),
-		tailsamplingprocessor.NewFactory(),
-		transformprocessor.NewFactory(),
-		remotetapprocessor.NewFactory(),
 	)
 	errs = multierr.Append(errs, err)
 
 	connectors, err := connector.MakeFactoryMap(
 		forwardconnector.NewFactory(),
-		countconnector.NewFactory(),
-		datadogconnector.NewFactory(),
-		exceptionsconnector.NewFactory(),
-		routingconnector.NewFactory(),
-		servicegraphconnector.NewFactory(),
-		spanmetricsconnector.NewFactory())
+	)
 	errs = multierr.Append(errs, err)
 
 	factories := otelcol.Factories{
