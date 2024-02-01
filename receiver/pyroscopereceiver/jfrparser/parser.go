@@ -223,7 +223,7 @@ func calculateValuesAgg(samples *pprof_proto.Profile) []profile_types.SampleType
 	// Loop through each sample type
 	for j, st := range samples.SampleType {
 		sum, count := calculateSumAndCount(samples, j)
-		valuesAgg = append(valuesAgg, profile_types.SampleType{fmt.Sprintf("%s:%s", st.Type, st.Unit), sum, count})
+		valuesAgg = append(valuesAgg, profile_types.SampleType{Key: fmt.Sprintf("%s:%s", st.Type, st.Unit), Sum: sum, Count: count})
 	}
 
 	return valuesAgg
