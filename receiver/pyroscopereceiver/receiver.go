@@ -154,7 +154,6 @@ func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWri
 		}
 
 		otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
-		otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().UnixMilli()-startTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
 		writeResponseNoContent(resp)
 	}()
 	return c
@@ -162,7 +161,6 @@ func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWri
 
 func (recv *pyroscopeReceiver) handleError(ctx context.Context, resp http.ResponseWriter, contentType string, statusCode int, msg string, service string, errorCode string) {
 	otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
-	otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().Unix()-startTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
 	recv.logger.Error(msg)
 	writeResponse(resp, "text/plain", statusCode, []byte(msg))
 }
