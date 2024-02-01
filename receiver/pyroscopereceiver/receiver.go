@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/compress"
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
@@ -95,7 +94,7 @@ func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.Cre
 
 // TODO: rate limit clients
 func (recv *pyroscopeReceiver) httpHandlerIngest(resp http.ResponseWriter, req *http.Request) {
-	ctx, cancel := context.WithTimeout(contextWithStart(req.Context(), time.Now().UnixMilli()), recv.cfg.Timeout)
+	ctx, cancel := context.WithTimeout(req.Context(), recv.cfg.Timeout)
 	defer cancel()
 
 	// all compute should be bounded by timeout, so dont add compute here
@@ -106,14 +105,6 @@ func (recv *pyroscopeReceiver) httpHandlerIngest(resp http.ResponseWriter, req *
 		return
 	case <-recv.handle(ctx, resp, req):
 	}
-}
-
-func startTimeFromContext(ctx context.Context) int64 {
-	return ctx.Value(keyStart).(int64)
-}
-
-func contextWithStart(ctx context.Context, start int64) context.Context {
-	return context.WithValue(ctx, keyStart, start)
 }
 
 func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWriter, req *http.Request) <-chan struct{} {
