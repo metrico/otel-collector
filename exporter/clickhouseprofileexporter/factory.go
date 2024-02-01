@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
@@ -19,7 +20,7 @@ func createDefaultConfig() component.Config {
 	return &Config{
 		TimeoutSettings: exporterhelper.NewDefaultTimeoutSettings(),
 		QueueSettings:   QueueSettings{QueueSize: exporterhelper.NewDefaultQueueSettings().QueueSize},
-		RetrySettings:   exporterhelper.NewDefaultRetrySettings(),
+		BackOffConfig:   configretry.NewDefaultBackOffConfig(),
 		Dsn:             defaultDsn,
 	}
 }
@@ -38,7 +39,7 @@ func createLogsExporter(ctx context.Context, set exporter.CreateSettings, cfg co
 		exporterhelper.WithShutdown(exp.Shutdown),
 		exporterhelper.WithQueue(c.enforceQueueSettings()),
 		exporterhelper.WithTimeout(c.TimeoutSettings),
-		exporterhelper.WithRetry(c.RetrySettings),
+		exporterhelper.WithRetry(c.BackOffConfig),
 	)
 }
 
