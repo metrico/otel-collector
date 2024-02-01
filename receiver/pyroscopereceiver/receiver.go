@@ -153,14 +153,14 @@ func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWri
 			return
 		}
 
-		otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
+		otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess, http.StatusNoContent)))
 		writeResponseNoContent(resp)
 	}()
 	return c
 }
 
 func (recv *pyroscopeReceiver) handleError(ctx context.Context, resp http.ResponseWriter, contentType string, statusCode int, msg string, service string, errorCode string) {
-	otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
+	otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode, statusCode)))
 	recv.logger.Error(msg)
 	writeResponse(resp, "text/plain", statusCode, []byte(msg))
 }
@@ -217,8 +217,12 @@ func readParams(qs *url.Values) (params, error) {
 	return p, nil
 }
 
-func newOtelcolAttrSetHttp(service string, errorCode string) *attribute.Set {
-	s := attribute.NewSet(attribute.KeyValue{Key: keyService, Value: attribute.StringValue(service)}, attribute.KeyValue{Key: "error_code", Value: attribute.StringValue(errorCode)})
+func newOtelcolAttrSetHttp(service string, errorCode string, statusCode int) *attribute.Set {
+	s := attribute.NewSet(
+		attribute.KeyValue{Key: keyService, Value: attribute.StringValue(service)},
+		attribute.KeyValue{Key: "error_code", Value: attribute.StringValue(errorCode)},
+		attribute.KeyValue{Key: "status_code", Value: attribute.IntValue(statusCode)},
+	)
 	return &s
 }
 

@@ -114,6 +114,7 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata) ([
 		if nil == pr {
 			continue
 		}
+
 		// assuming jfr-pprof conversion should not expand memory footprint, transitively applying jfr limit on pprof
 		pr.prof.Payload = new(bytes.Buffer)
 		pr.pprof.WriteUncompressed(pr.prof.Payload)
