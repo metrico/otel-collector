@@ -130,6 +130,7 @@ func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWri
 			recv.handleError(ctx, resp, "text/plain", http.StatusBadRequest, err.Error(), pm.name, errorCodeError)
 			return
 		}
+
 		// if no profiles have been parsed, dont error but return
 		if pl.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().Len() == 0 {
 			writeResponseNoContent(resp)

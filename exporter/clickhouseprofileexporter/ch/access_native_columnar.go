@@ -13,6 +13,20 @@ import (
 )
 
 // schema reference: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
+const (
+	columnTimestampNs      = "timestamp_ns"
+	columnType             = "type"
+	columnServiceName      = "service_name"
+	columnSampleTypesUnits = "sample_types_units"
+	columnPeriodType       = "period_type"
+	columnPeriodUnit       = "period_unit"
+	columnTags             = "tags"
+	columnDurationNs       = "duration_ns"
+	columnPayloadType      = "payload_type"
+	columnPayloaf          = "payload"
+	columnValuesAgg        = "values_agg"
+)
+
 type clickhouseAccessNativeColumnar struct {
 	conn driver.Conn
 
@@ -92,10 +106,10 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 		m = r.Attributes()
 		timestamp_ns[i] = uint64(r.Timestamp())
 
-		tmp, _ = m.Get("type")
+		tmp, _ = m.Get(columnType)
 		typ[i] = tmp.AsString()
 
-		tmp, _ = m.Get("service_name")
+		tmp, _ = m.Get(columnServiceName)
 		service_name[i] = tmp.AsString()
 
 		sample_types, _ := m.Get("sample_types")
@@ -112,7 +126,7 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 			return err
 		}
 
-		values_agg_raw, ok := m.Get("values_agg")
+		values_agg_raw, ok := m.Get(columnValuesAgg)
 		if ok {
 			values_agg_tuple, err := valueAggToTuple(&values_agg_raw)
 			if err != nil {
@@ -127,13 +141,13 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 			sample_types_units_item[i] = tuple{v, sample_units_array[i]}
 		}
 		sample_types_units[i] = sample_types_units_item
-		tmp, _ = m.Get("period_type")
+		tmp, _ = m.Get(columnPeriodType)
 		period_type[i] = tmp.AsString()
 
-		tmp, _ = m.Get("period_unit")
+		tmp, _ = m.Get(columnPeriodUnit)
 		period_unit[i] = tmp.AsString()
 
-		tmp, _ = m.Get("tags")
+		tmp, _ = m.Get(columnTags)
 		tm = tmp.Map().AsRaw()
 		tag, j := make([]tuple, len(tm)), 0
 		for k, v := range tm {
@@ -142,13 +156,24 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 		}
 		tags[i] = tag
 
-		tmp, _ = m.Get("duration_ns")
+		tmp, _ = m.Get(columnDurationNs)
 		duration_ns[i], _ = strconv.ParseUint(tmp.Str(), 10, 64)
 
-		tmp, _ = m.Get("payload_type")
+		tmp, _ = m.Get(columnPeriodType)
 		payload_type[i] = tmp.AsString()
 
 		payload[i] = r.Body().Bytes().AsRaw()
+
+		ch.logger.Debug(
+			fmt.Sprintf("batch insert prepared row %d:", i),
+			zap.Uint64(columnTimestampNs, timestamp_ns[i]),
+			zap.String(columnType, typ[i]),
+			zap.String(columnServiceName, service_name[i]),
+			zap.String(columnPeriodType, period_type[i]),
+			zap.String(columnPeriodUnit, period_unit[i]),
+			zap.Uint64(columnDurationNs, duration_ns[i]),
+			zap.String(columnPayloadType, payload_type[i]),
+		)
 	}
 
 	// column order here should match table column order
