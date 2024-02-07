@@ -242,7 +242,6 @@ func releaseBuf(p *sync.Pool, buf *bytes.Buffer) {
 }
 
 func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request, pm params) (plog.Logs, error) {
-	fmt.Println("Req", req.Header)
 	var (
 		tmp []string
 		ok  bool
@@ -344,11 +343,6 @@ func (recv *pyroscopeReceiver) openMultipart(req *http.Request) (multipart.File,
 	if part == nil {
 		return nil, fmt.Errorf("required jfr/pprof part is missing")
 	}
-	//part, ok = mf.File[formatJfr]
-	//if !ok {
-	//	return nil, fmt.Errorf("required jfr part is missing")
-	//}
-
 	fh := part[0]
 	if fh.Filename != formatJfr && fh.Filename != filePprof {
 		return nil, fmt.Errorf("filename is not '%s or %s'", formatJfr, formatPprof)

@@ -174,43 +174,6 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 	run(t, tests, collectorAddr, sink)
 }
 
-//func TestPyroscopeIngestPprofCpu(t *testing.T) {
-//	tests := make([]datatest, 1)
-//	pb := loadTestData(t, "cortex-dev-01__kafka-0__cpu__0.pb")
-//	tests[0] = datatest{
-//		name: "send labeled multipart form data gzipped cpu  to http ingest endpoint",
-//		urlParams: map[string]string{
-//			"name":       "com.example.App{dc=us-east-1,kubernetes_pod_name=app-abcd1234}",
-//			"from":       "1700332322",
-//			"until":      "1700332329",
-//			"sampleRate": "100",
-//		},
-//		filename: filepath.Join("testdata", "profile.pprof"),
-//		expected: gen([]profileLog{{
-//			timestamp: 1700332322000000000,
-//			attrs: map[string]any{
-//				"service_name": "com.example.App",
-//				"tags": map[string]any{
-//					"dc":                  "us-east-1",
-//					"kubernetes_pod_name": "app-abcd1234",
-//				},
-//				"duration_ns":  "7000000000",
-//				"type":         "process_cpu",
-//				"period_type":  "cpu",
-//				"period_unit":  "nanoseconds",
-//				"payload_type": "0",
-//				"sample_types": []any{"cpu"},
-//				"sample_units": []any{"nanoseconds"},
-//				"values_agg":   []any{[]any{"cpu:nanoseconds", 4780000000, 370}},
-//			},
-//			body: pb,
-//		}}),
-//	}
-//	addr, sink := startHttpServer(t)
-//	collectorAddr := fmt.Sprintf("http://%s", addr)
-//	run(t, tests, collectorAddr, sink)
-//}
-
 // TODO: add block, lock, wall test cases
 
 // Returns an available local tcp port. It doesnt bind the port, and there is a race condition as

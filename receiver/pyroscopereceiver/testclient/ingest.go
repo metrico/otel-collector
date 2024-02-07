@@ -42,11 +42,6 @@ func Ingest(addr string, urlParams map[string]string, jfr string) error {
 	if err != nil {
 		return err
 	}
-	//if fieldName == "profile" {
-	//	req.Header.Add("X-Extra-Header", "extra-header-value")
-	//	req.Header.Add("Content-Disposition", "form-data")
-	//	//req.Header.Add("Content-Type", "application/octet-stream")
-	//}
 	req.Header.Add("Content-Type", mw.FormDataContentType())
 
 	q := req.URL.Query()
