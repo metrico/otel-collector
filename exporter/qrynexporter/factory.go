@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
@@ -42,7 +43,7 @@ func createDefaultConfig() component.Config {
 	return &Config{
 		TimeoutSettings: exporterhelper.NewDefaultTimeoutSettings(),
 		QueueSettings:   QueueSettings{QueueSize: exporterhelper.NewDefaultQueueSettings().QueueSize},
-		RetrySettings:   exporterhelper.NewDefaultRetrySettings(),
+		BackOffConfig:   configretry.NewDefaultBackOffConfig(),
 		DSN:             defaultDSN,
 	}
 }
@@ -54,7 +55,6 @@ func createTracesExporter(
 	params exporter.CreateSettings,
 	cfg component.Config,
 ) (exporter.Traces, error) {
-
 	c := cfg.(*Config)
 	oce, err := newTracesExporter(params.Logger, c)
 	if err != nil {
@@ -69,7 +69,7 @@ func createTracesExporter(
 		exporterhelper.WithShutdown(oce.Shutdown),
 		exporterhelper.WithTimeout(c.TimeoutSettings),
 		exporterhelper.WithQueue(c.enforcedQueueSettings()),
-		exporterhelper.WithRetry(c.RetrySettings),
+		exporterhelper.WithRetry(c.BackOffConfig),
 	)
 }
 
@@ -94,7 +94,7 @@ func createLogsExporter(
 		exporterhelper.WithShutdown(exporter.Shutdown),
 		exporterhelper.WithTimeout(c.TimeoutSettings),
 		exporterhelper.WithQueue(c.enforcedQueueSettings()),
-		exporterhelper.WithRetry(c.RetrySettings),
+		exporterhelper.WithRetry(c.BackOffConfig),
 	)
 }
 
@@ -119,6 +119,6 @@ func createMetricsExporter(
 		exporterhelper.WithShutdown(exporter.Shutdown),
 		exporterhelper.WithTimeout(c.TimeoutSettings),
 		exporterhelper.WithQueue(c.enforcedQueueSettings()),
-		exporterhelper.WithRetry(c.RetrySettings),
+		exporterhelper.WithRetry(c.BackOffConfig),
 	)
 }

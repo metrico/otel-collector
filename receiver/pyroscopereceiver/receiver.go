@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/compress"
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
@@ -95,7 +94,7 @@ func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.Cre
 
 // TODO: rate limit clients
 func (recv *pyroscopeReceiver) httpHandlerIngest(resp http.ResponseWriter, req *http.Request) {
-	ctx, cancel := context.WithTimeout(contextWithStart(req.Context(), time.Now().UnixMilli()), recv.cfg.Timeout)
+	ctx, cancel := context.WithTimeout(req.Context(), recv.cfg.Timeout)
 	defer cancel()
 
 	// all compute should be bounded by timeout, so dont add compute here
@@ -106,14 +105,6 @@ func (recv *pyroscopeReceiver) httpHandlerIngest(resp http.ResponseWriter, req *
 		return
 	case <-recv.handle(ctx, resp, req):
 	}
-}
-
-func startTimeFromContext(ctx context.Context) int64 {
-	return ctx.Value(keyStart).(int64)
-}
-
-func contextWithStart(ctx context.Context, start int64) context.Context {
-	return context.WithValue(ctx, keyStart, start)
 }
 
 func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWriter, req *http.Request) <-chan struct{} {
@@ -139,6 +130,7 @@ func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWri
 			recv.handleError(ctx, resp, "text/plain", http.StatusBadRequest, err.Error(), pm.name, errorCodeError)
 			return
 		}
+
 		// if no profiles have been parsed, dont error but return
 		if pl.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().Len() == 0 {
 			writeResponseNoContent(resp)
@@ -153,16 +145,14 @@ func (recv *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWri
 			return
 		}
 
-		otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
-		otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().UnixMilli()-startTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess)))
+		otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess, http.StatusNoContent)))
 		writeResponseNoContent(resp)
 	}()
 	return c
 }
 
 func (recv *pyroscopeReceiver) handleError(ctx context.Context, resp http.ResponseWriter, contentType string, statusCode int, msg string, service string, errorCode string) {
-	otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
-	otelcolReceiverPyroscopeHttpResponseTimeMillis.Record(ctx, time.Now().Unix()-startTimeFromContext(ctx), metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode)))
+	otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode, statusCode)))
 	recv.logger.Error(msg)
 	writeResponse(resp, "text/plain", statusCode, []byte(msg))
 }
@@ -219,8 +209,12 @@ func readParams(qs *url.Values) (params, error) {
 	return p, nil
 }
 
-func newOtelcolAttrSetHttp(service string, errorCode string) *attribute.Set {
-	s := attribute.NewSet(attribute.KeyValue{Key: keyService, Value: attribute.StringValue(service)}, attribute.KeyValue{Key: "error_code", Value: attribute.StringValue(errorCode)})
+func newOtelcolAttrSetHttp(service string, errorCode string, statusCode int) *attribute.Set {
+	s := attribute.NewSet(
+		attribute.KeyValue{Key: keyService, Value: attribute.StringValue(service)},
+		attribute.KeyValue{Key: "error_code", Value: attribute.StringValue(errorCode)},
+		attribute.KeyValue{Key: "status_code", Value: attribute.IntValue(statusCode)},
+	)
 	return &s
 }
 

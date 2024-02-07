@@ -16,6 +16,7 @@ package qrynexporter
 
 import (
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
 
@@ -26,7 +27,7 @@ const (
 // Config defines configuration for logging exporter.
 type Config struct {
 	exporterhelper.TimeoutSettings `mapstructure:",squash"`
-	exporterhelper.RetrySettings   `mapstructure:"retry_on_failure"`
+	configretry.BackOffConfig      `mapstructure:"retry_on_failure"`
 	// QueueSettings is a subset of exporterhelper.QueueSettings,
 	// because only QueueSize is user-settable.
 	QueueSettings QueueSettings `mapstructure:"sending_queue"`
