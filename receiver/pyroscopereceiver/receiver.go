@@ -227,10 +227,9 @@ func newOtelcolAttrSetHttp(service string, errorCode string) *attribute.Set {
 func acquireBuf(p *sync.Pool) *bytes.Buffer {
 	v := p.Get()
 	if v == nil {
-		v = new(bytes.Buffer)
+		return new(bytes.Buffer)
 	}
-	buf := v.(*bytes.Buffer)
-	return buf
+	return v.(*bytes.Buffer)
 }
 
 func releaseBuf(p *sync.Pool, buf *bytes.Buffer) {

@@ -222,7 +222,7 @@ func calculateValuesAgg(samples *pprof_proto.Profile) []profile_types.SampleType
 	// Loop through each sample type
 	for j, st := range samples.SampleType {
 		sum, count := calculateSumAndCount(samples, j)
-		valuesAgg = append(valuesAgg, profile_types.SampleType{fmt.Sprintf("%s:%s", st.Type, st.Unit), sum, count})
+		valuesAgg = append(valuesAgg, profile_types.SampleType{Key: fmt.Sprintf("%s:%s", st.Type, st.Unit), Sum: sum, Count: count})
 	}
 
 	return valuesAgg
@@ -299,7 +299,8 @@ func (pa *jfrPprofParser) appendLocation(sampleType sampleType, prof *pprof_prot
 
 	// append new location with a single line referencing the new function, ignoring inlining without a line number
 	newl := &pprof_proto.Location{
-		ID:   uint64(len(prof.Location)) + 1, // starts with 1 not 0
+		ID: uint64(len(prof.Location)) + 1, // starts with 1 not 0
+		// TODO: parse line numbers like https://github.com/grafana/jfr-parser/pull/27/files
 		Line: []pprof_proto.Line{{Function: newf}},
 	}
 
