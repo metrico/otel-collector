@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
-	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/pprofparser"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -15,6 +13,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/pprofparser"
 
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/compress"
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"

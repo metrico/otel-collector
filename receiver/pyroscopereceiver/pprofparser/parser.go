@@ -3,6 +3,7 @@ package pprofparser
 import (
 	"bytes"
 	"fmt"
+
 	pprof_proto "github.com/google/pprof/profile"
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
 )
