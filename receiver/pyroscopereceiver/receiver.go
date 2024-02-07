@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/pprofparser"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -15,7 +17,6 @@ import (
 	"time"
 
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/compress"
-	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.opentelemetry.io/collector/component"
@@ -32,7 +33,8 @@ const (
 	ingestPath = "/ingest"
 
 	formatJfr   = "jfr"
-	formatPprof = "pprof"
+	formatPprof = "profile"
+	filePprof   = "profile.pprof"
 
 	errorCodeError   = "1"
 	errorCodeSuccess = ""
@@ -239,6 +241,7 @@ func releaseBuf(p *sync.Pool, buf *bytes.Buffer) {
 }
 
 func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request, pm params) (plog.Logs, error) {
+	fmt.Println("Req", req.Header)
 	var (
 		tmp []string
 		ok  bool
@@ -247,14 +250,14 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 	logs := plog.NewLogs()
 
 	qs := req.URL.Query()
-	if tmp, ok = qs["format"]; ok && tmp[0] == "jfr" {
+	if tmp, ok = qs["format"]; ok && (tmp[0] == "jfr") {
 		pa = jfrparser.NewJfrPprofParser()
 	} else {
-		return logs, fmt.Errorf("unsupported format, supported: [jfr]")
-	}
+		pa = pprofparser.NewPprofParser()
 
+	}
 	// support only multipart/form-data
-	f, err := recv.openMultipartJfr(req)
+	f, err := recv.openMultipart(req)
 	if err != nil {
 		return logs, err
 	}
@@ -321,7 +324,7 @@ func newOtelcolAttrSetPayloadSizeBytes(service string, typ string, encoding stri
 	return &s
 }
 
-func (recv *pyroscopeReceiver) openMultipartJfr(req *http.Request) (multipart.File, error) {
+func (recv *pyroscopeReceiver) openMultipart(req *http.Request) (multipart.File, error) {
 	if err := req.ParseMultipartForm(recv.cfg.Protocols.Http.MaxRequestBodySize); err != nil {
 		return nil, fmt.Errorf("failed to parse multipart request: %w", err)
 	}
@@ -329,18 +332,29 @@ func (recv *pyroscopeReceiver) openMultipartJfr(req *http.Request) (multipart.Fi
 	defer func() {
 		_ = mf.RemoveAll()
 	}()
-
-	part, ok := mf.File[formatJfr]
-	if !ok {
-		return nil, fmt.Errorf("required jfr part is missing")
+	formats := []string{formatJfr, formatPprof}
+	var part []*multipart.FileHeader // Replace YourPartType with the actual type of your 'part' variable
+	for _, f := range formats {
+		if p, ok := mf.File[f]; ok {
+			part = p
+			break
+		}
 	}
+	if part == nil {
+		return nil, fmt.Errorf("required jfr/pprof part is missing")
+	}
+	//part, ok = mf.File[formatJfr]
+	//if !ok {
+	//	return nil, fmt.Errorf("required jfr part is missing")
+	//}
+
 	fh := part[0]
-	if fh.Filename != formatJfr {
-		return nil, fmt.Errorf("jfr filename is not '%s'", formatJfr)
+	if fh.Filename != formatJfr && fh.Filename != filePprof {
+		return nil, fmt.Errorf("filename is not '%s or %s'", formatJfr, formatPprof)
 	}
 	f, err := fh.Open()
 	if err != nil {
-		return nil, fmt.Errorf("failed to open jfr file")
+		return nil, fmt.Errorf("failed to open  file")
 	}
 	return f, nil
 }
@@ -372,6 +386,7 @@ func entitiesToStrings(entities []profile_types.SampleType) []any {
 }
 
 func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) error {
+
 	m.PutStr("type", prof.Type.Type)
 	s := m.PutEmptySlice("sample_types")
 

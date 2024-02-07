@@ -21,10 +21,10 @@ import (
 	"go.uber.org/zap"
 )
 
-type jfrtest struct {
+type datatest struct {
 	name      string
 	urlParams map[string]string
-	jfr       string
+	filename  string
 	expected  plog.Logs
 }
 
@@ -40,10 +40,10 @@ func loadTestData(t *testing.T, filename string) []byte {
 	return b
 }
 
-func run(t *testing.T, tests []jfrtest, collectorAddr string, sink *consumertest.LogsSink) {
+func run(t *testing.T, tests []datatest, collectorAddr string, sink *consumertest.LogsSink) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.NoError(t, testclient.Ingest(collectorAddr, tt.urlParams, tt.jfr), "send shouldn't have been failed")
+			assert.NoError(t, testclient.Ingest(collectorAddr, tt.urlParams, tt.filename), "send shouldn't have been failed")
 			actual := sink.AllLogs()
 			assert.NoError(t, plogtest.CompareLogs(tt.expected, actual[0]))
 			sink.Reset()
@@ -75,9 +75,9 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 }
 
 func TestPyroscopeIngestJfrCpu(t *testing.T) {
-	tests := make([]jfrtest, 1)
+	tests := make([]datatest, 1)
 	pb := loadTestData(t, "cortex-dev-01__kafka-0__cpu__0.pb")
-	tests[0] = jfrtest{
+	tests[0] = datatest{
 		name: "send labeled multipart form data gzipped cpu jfr to http ingest endpoint",
 		urlParams: map[string]string{
 			"name":       "com.example.App{dc=us-east-1,kubernetes_pod_name=app-abcd1234}",
@@ -86,7 +86,7 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 			"format":     "jfr",
 			"sampleRate": "100",
 		},
-		jfr: filepath.Join("testdata", "cortex-dev-01__kafka-0__cpu__0.jfr"),
+		filename: filepath.Join("testdata", "cortex-dev-01__kafka-0__cpu__0.jfr"),
 		expected: gen([]profileLog{{
 			timestamp: 1700332322000000000,
 			attrs: map[string]any{
@@ -113,10 +113,10 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 }
 
 func TestPyroscopeIngestJfrMemory(t *testing.T) {
-	tests := make([]jfrtest, 1)
+	tests := make([]datatest, 1)
 	pbAllocInNewTlab := loadTestData(t, "memory_example_alloc_in_new_tlab.pb")
 	pbLiveObject := loadTestData(t, "memory_example_live_object.pb")
-	tests[0] = jfrtest{
+	tests[0] = datatest{
 		name: "send labeled multipart form data gzipped memory jfr to http ingest endpoint",
 		urlParams: map[string]string{
 			"name":   "com.example.App{dc=us-east-1,kubernetes_pod_name=app-abcd1234}",
@@ -124,7 +124,7 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 			"until":  "1700332329",
 			"format": "jfr",
 		},
-		jfr: filepath.Join("testdata", "memory_alloc_live_example.jfr"),
+		filename: filepath.Join("testdata", "memory_alloc_live_example.jfr"),
 		expected: gen([]profileLog{{
 			timestamp: 1700332322000000000,
 			attrs: map[string]any{
@@ -173,6 +173,43 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 	collectorAddr := fmt.Sprintf("http://%s", addr)
 	run(t, tests, collectorAddr, sink)
 }
+
+//func TestPyroscopeIngestPprofCpu(t *testing.T) {
+//	tests := make([]datatest, 1)
+//	pb := loadTestData(t, "cortex-dev-01__kafka-0__cpu__0.pb")
+//	tests[0] = datatest{
+//		name: "send labeled multipart form data gzipped cpu  to http ingest endpoint",
+//		urlParams: map[string]string{
+//			"name":       "com.example.App{dc=us-east-1,kubernetes_pod_name=app-abcd1234}",
+//			"from":       "1700332322",
+//			"until":      "1700332329",
+//			"sampleRate": "100",
+//		},
+//		filename: filepath.Join("testdata", "profile.pprof"),
+//		expected: gen([]profileLog{{
+//			timestamp: 1700332322000000000,
+//			attrs: map[string]any{
+//				"service_name": "com.example.App",
+//				"tags": map[string]any{
+//					"dc":                  "us-east-1",
+//					"kubernetes_pod_name": "app-abcd1234",
+//				},
+//				"duration_ns":  "7000000000",
+//				"type":         "process_cpu",
+//				"period_type":  "cpu",
+//				"period_unit":  "nanoseconds",
+//				"payload_type": "0",
+//				"sample_types": []any{"cpu"},
+//				"sample_units": []any{"nanoseconds"},
+//				"values_agg":   []any{[]any{"cpu:nanoseconds", 4780000000, 370}},
+//			},
+//			body: pb,
+//		}}),
+//	}
+//	addr, sink := startHttpServer(t)
+//	collectorAddr := fmt.Sprintf("http://%s", addr)
+//	run(t, tests, collectorAddr, sink)
+//}
 
 // TODO: add block, lock, wall test cases
 

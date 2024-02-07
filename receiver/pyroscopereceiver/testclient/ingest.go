@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"strings"
 )
 
 func Ingest(addr string, urlParams map[string]string, jfr string) error {
@@ -17,8 +18,16 @@ func Ingest(addr string, urlParams map[string]string, jfr string) error {
 
 	body := new(bytes.Buffer)
 
+	var fieldName, filename string
+	if strings.Contains(jfr, "profile") {
+		fieldName = "profile"
+		filename = "profile.pprof"
+	} else {
+		fieldName = "jfr"
+		filename = "jfr"
+	}
 	mw := multipart.NewWriter(body)
-	part, err := mw.CreateFormFile("jfr", "jfr")
+	part, err := mw.CreateFormFile(fieldName, filename)
 	if err != nil {
 		return fmt.Errorf("failed to create form file: %w", err)
 	}
@@ -33,6 +42,11 @@ func Ingest(addr string, urlParams map[string]string, jfr string) error {
 	if err != nil {
 		return err
 	}
+	//if fieldName == "profile" {
+	//	req.Header.Add("X-Extra-Header", "extra-header-value")
+	//	req.Header.Add("Content-Disposition", "form-data")
+	//	//req.Header.Add("Content-Type", "application/octet-stream")
+	//}
 	req.Header.Add("Content-Type", mw.FormDataContentType())
 
 	q := req.URL.Query()
