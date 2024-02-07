@@ -2,13 +2,14 @@ package clickhouseprofileexporter
 
 import (
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
 
 // Represents the receiver config within the collector's config.yaml
 type Config struct {
 	exporterhelper.TimeoutSettings `mapstructure:",squash"`
-	exporterhelper.RetrySettings   `mapstructure:"retry_on_failure"`
+	configretry.BackOffConfig      `mapstructure:"retry_on_failure"`
 	QueueSettings                  `mapstructure:"sending_queue"`
 
 	// DSN is the ClickHouse server Data Source Name.
