@@ -33,7 +33,7 @@ type logsExporter struct {
 
 	db clickhouse.Conn
 
-	attritubeLabels string
+	attributeLabels string
 	resourceLabels  string
 	format          string
 	cluster         bool
@@ -52,7 +52,7 @@ func newLogsExporter(logger *zap.Logger, cfg *Config) (*logsExporter, error) {
 		logger:          logger,
 		db:              db,
 		format:          cfg.Logs.Format,
-		attritubeLabels: cfg.Logs.AttritubeLabels,
+		attributeLabels: cfg.Logs.AttributeLabels,
 		resourceLabels:  cfg.Logs.ResourceLabels,
 		cluster:         cfg.ClusteredClickhouse,
 	}, nil
@@ -107,13 +107,13 @@ func (e *logsExporter) convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs 
 		out = out.Merge(labels)
 	}
 
-	if e.attritubeLabels != "" {
+	if e.attributeLabels != "" {
 		labels := convertSelectedAttributesToLabels(logAttrs, pcommon.NewValueStr(e.resourceLabels))
 		out = out.Merge(labels)
 	}
 
 	if e.resourceLabels != "" {
-		labels := convertSelectedAttributesToLabels(resAttrs, pcommon.NewValueStr(e.attritubeLabels))
+		labels := convertSelectedAttributesToLabels(resAttrs, pcommon.NewValueStr(e.attributeLabels))
 		out = out.Merge(labels)
 	}
 
@@ -389,6 +389,8 @@ func convertLogToTimeSerie(fingerprint model.Fingerprint, log plog.LogRecord, la
 }
 
 func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
+	start := time.Now()
+
 	var (
 		samples    []Sample
 		timeSeries []TimeSerie
@@ -430,7 +432,13 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 		}
 	}
 
-	return batchSamplesAndTimeSeries(context.WithValue(ctx, "cluster", e.cluster), e.db, samples, timeSeries)
+	if err := batchSamplesAndTimeSeries(context.WithValue(ctx, "cluster", e.cluster), e.db, samples, timeSeries); err != nil {
+		return err
+	}
+
+	e.logger.Debug("pushLogsData", zap.Int("samples", len(samples)), zap.Int("timeseries", len(timeSeries)), zap.String("cost", time.Since(start).String()))
+
+	return nil
 }
 
 func batchSamplesAndTimeSeries(ctx context.Context, db clickhouse.Conn, samples []Sample, timeSeries []TimeSerie) error {
