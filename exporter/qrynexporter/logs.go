@@ -33,7 +33,7 @@ type logsExporter struct {
 
 	db clickhouse.Conn
 
-	attritubeLabels string
+	attributeLabels string
 	resourceLabels  string
 	format          string
 	cluster         bool
@@ -52,7 +52,7 @@ func newLogsExporter(logger *zap.Logger, cfg *Config) (*logsExporter, error) {
 		logger:          logger,
 		db:              db,
 		format:          cfg.Logs.Format,
-		attritubeLabels: cfg.Logs.AttritubeLabels,
+		attributeLabels: cfg.Logs.AttributeLabels,
 		resourceLabels:  cfg.Logs.ResourceLabels,
 		cluster:         cfg.ClusteredClickhouse,
 	}, nil
@@ -107,13 +107,13 @@ func (e *logsExporter) convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs 
 		out = out.Merge(labels)
 	}
 
-	if e.attritubeLabels != "" {
+	if e.attributeLabels != "" {
 		labels := convertSelectedAttributesToLabels(logAttrs, pcommon.NewValueStr(e.resourceLabels))
 		out = out.Merge(labels)
 	}
 
 	if e.resourceLabels != "" {
-		labels := convertSelectedAttributesToLabels(resAttrs, pcommon.NewValueStr(e.attritubeLabels))
+		labels := convertSelectedAttributesToLabels(resAttrs, pcommon.NewValueStr(e.attributeLabels))
 		out = out.Merge(labels)
 	}
 
