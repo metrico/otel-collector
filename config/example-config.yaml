@@ -64,7 +64,7 @@ exporters:
       max_interval: 30s
       max_elapsed_time: 300s
   clickhouseprofileexporter:
-    dsn: tcp://0.0.0.0:9000/qryn
+    dsn: clickhouse://0.0.0.0:9000/qryn
     timeout: 10s
     sending_queue:
       queue_size: 100
@@ -81,6 +81,8 @@ exporters:
 extensions:
   health_check:
   pprof:
+    mutex_profile_fraction: 100
+    block_profile_fraction: 100
   zpages:
   memory_ballast:
     size_mib: 1000

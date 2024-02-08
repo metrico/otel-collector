@@ -300,7 +300,8 @@ func (pa *jfrPprofParser) appendLocation(sampleType sampleType, prof *pprof_prot
 
 	// append new location with a single line referencing the new function, ignoring inlining without a line number
 	newl := &pprof_proto.Location{
-		ID:   uint64(len(prof.Location)) + 1, // starts with 1 not 0
+		ID: uint64(len(prof.Location)) + 1, // starts with 1 not 0
+		// TODO: parse line numbers like https://github.com/grafana/jfr-parser/pull/27/files
 		Line: []pprof_proto.Line{{Function: newf}},
 	}
 
