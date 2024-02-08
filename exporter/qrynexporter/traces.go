@@ -185,7 +185,7 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 	if err := e.exportResourceSapns(_ctx, td.ResourceSpans()); err != nil {
 		return err
 	}
-	e.logger.Info("pushTraceData", zap.Int("spanCount", td.SpanCount()), zap.String("cost", time.Since(start).String()))
+	e.logger.Debug("pushTraceData", zap.Int("spanCount", td.SpanCount()), zap.String("cost", time.Since(start).String()))
 	return nil
 }
 
