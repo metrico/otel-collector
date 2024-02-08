@@ -53,8 +53,8 @@ type QueueSettings struct {
 
 // LogsConfig holds the configuration for log data.
 type LogsConfig struct {
-	// AttritubeLabels is the string representing attribute labels.
-	AttritubeLabels string `mapstructure:"attritube_labels"`
+	// AttributeLabels is the string representing attribute labels.
+	AttributeLabels string `mapstructure:"attribute_labels"`
 	// ResourceLabels is the string representing resource labels.
 	ResourceLabels string `mapstructure:"resource_labels"`
 	// Format is the string representing the format.
