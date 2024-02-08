@@ -159,10 +159,20 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 		tmp, _ = m.Get(columnDurationNs)
 		duration_ns[i], _ = strconv.ParseUint(tmp.Str(), 10, 64)
 
-		tmp, _ = m.Get(columnPeriodType)
+		tmp, _ = m.Get(columnPayloadType)
 		payload_type[i] = tmp.AsString()
 
 		payload[i] = r.Body().Bytes().AsRaw()
+
+		ch.logger.Debug(
+			fmt.Sprintf("batch insert prepared row %d", i),
+			zap.Uint64(columnTimestampNs, timestamp_ns[i]),
+			zap.String(columnType, typ[i]),
+			zap.String(columnServiceName, service_name[i]),
+			zap.String(columnPeriodType, period_type[i]),
+			zap.String(columnPeriodUnit, period_unit[i]),
+			zap.String(columnPayloadType, payload_type[i]),
+		)
 	}
 
 	// column order here should match table column order

@@ -221,10 +221,9 @@ func newOtelcolAttrSetHttp(service string, errorCode string, statusCode int) *at
 func acquireBuf(p *sync.Pool) *bytes.Buffer {
 	v := p.Get()
 	if v == nil {
-		v = new(bytes.Buffer)
+		return new(bytes.Buffer)
 	}
-	buf := v.(*bytes.Buffer)
-	return buf
+	return v.(*bytes.Buffer)
 }
 
 func releaseBuf(p *sync.Pool, buf *bytes.Buffer) {
@@ -239,6 +238,8 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		pa  parser
 	)
 	logs := plog.NewLogs()
+
+	recv.logger.Debug("received profiles", zap.String("url_query", req.URL.RawQuery))
 
 	qs := req.URL.Query()
 	if tmp, ok = qs["format"]; ok && tmp[0] == "jfr" {
@@ -284,9 +285,10 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 
 	sz := 0
 	rs := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
-	for _, pr := range ps {
+	for i, pr := range ps {
 		r := rs.AppendEmpty()
-		r.SetTimestamp(pcommon.Timestamp(ns(pm.start)))
+		timestampNs := ns(pm.start)
+		r.SetTimestamp(pcommon.Timestamp(timestampNs))
 		m := r.Attributes()
 		m.PutStr("duration_ns", fmt.Sprint(ns(pm.end-pm.start)))
 		m.PutStr("service_name", pm.name)
@@ -300,6 +302,17 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		}
 		r.Body().SetEmptyBytes().FromRaw(pr.Payload.Bytes())
 		sz += pr.Payload.Len()
+		recv.logger.Debug(
+			fmt.Sprintf("parsed profile %d", i),
+			zap.Uint64("timestamp_ns", timestampNs),
+			zap.String("type", pr.Type.Type),
+			zap.String("service_name", pm.name),
+			zap.String("period_type", pr.Type.PeriodType),
+			zap.String("period_unit", pr.Type.PeriodUnit),
+			zap.String("sample_types", strings.Join(pr.Type.SampleType, ",")),
+			zap.String("sample_units", strings.Join(pr.Type.SampleUnit, ",")),
+			zap.Uint8("payload_type", uint8(pr.PayloadType)),
+		)
 	}
 	// sz may be 0 and it will be recorded
 	otelcolReceiverPyroscopeParsedBodyUncompressedSizeBytes.Record(ctx, int64(sz), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatPprof, "")))
@@ -367,8 +380,8 @@ func entitiesToStrings(entities []profile_types.SampleType) []any {
 
 func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) error {
 	m.PutStr("type", prof.Type.Type)
-	s := m.PutEmptySlice("sample_types")
 
+	s := m.PutEmptySlice("sample_types")
 	err := s.FromRaw(stringToAnyArray(prof.Type.SampleType))
 	if err != nil {
 		return err
@@ -379,19 +392,18 @@ func setAttrsFromProfile(prof profile_types.ProfileIR, m pcommon.Map) error {
 	if err != nil {
 		return err
 	}
+
 	// Correct type assertion for []profile.SampleType
 	result := prof.ValueAggregation.([]profile_types.SampleType)
 	s = m.PutEmptySlice("values_agg")
-
 	err = s.FromRaw(entitiesToStrings(result))
-
 	if err != nil {
 		return err
 	}
+
 	m.PutStr("period_type", prof.Type.PeriodType)
 	m.PutStr("period_unit", prof.Type.PeriodUnit)
 	m.PutStr("payload_type", fmt.Sprint(prof.PayloadType))
-
 	return nil
 }
 
