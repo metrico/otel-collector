@@ -389,6 +389,8 @@ func convertLogToTimeSerie(fingerprint model.Fingerprint, log plog.LogRecord, la
 }
 
 func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
+	start := time.Now()
+
 	var (
 		samples    []Sample
 		timeSeries []TimeSerie
@@ -430,7 +432,13 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 		}
 	}
 
-	return batchSamplesAndTimeSeries(context.WithValue(ctx, "cluster", e.cluster), e.db, samples, timeSeries)
+	if err := batchSamplesAndTimeSeries(context.WithValue(ctx, "cluster", e.cluster), e.db, samples, timeSeries); err != nil {
+		return err
+	}
+
+	e.logger.Info("pushLogsData", zap.Int("samples", len(samples)), zap.Int("timeseries", len(timeSeries)), zap.String("cost", time.Since(start).String()))
+
+	return nil
 }
 
 func batchSamplesAndTimeSeries(ctx context.Context, db clickhouse.Conn, samples []Sample, timeSeries []TimeSerie) error {

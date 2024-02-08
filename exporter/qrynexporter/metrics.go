@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -461,6 +462,8 @@ func (e *metricsExporter) collectFromMetric(metric pmetric.Metric, resource pcom
 }
 
 func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metrics) error {
+	start := time.Now()
+
 	// for collect samples and timeSeries
 	var (
 		samples    []Sample
@@ -479,7 +482,13 @@ func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metric
 		}
 	}
 
-	return batchSamplesAndTimeSeries(context.WithValue(ctx, "cluster", e.cluster), e.db, samples, timeSeries)
+	if err := batchSamplesAndTimeSeries(context.WithValue(ctx, "cluster", e.cluster), e.db, samples, timeSeries); err != nil {
+		return err
+	}
+
+	e.logger.Info("pushMetricsData", zap.Int("samples", len(samples)), zap.Int("timeseries", len(timeSeries)), zap.String("cost", time.Since(start).String()))
+
+	return nil
 }
 
 // isValidAggregationTemporality checks whether an OTel metric has a valid
