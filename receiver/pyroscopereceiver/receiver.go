@@ -243,7 +243,6 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 	logs := plog.NewLogs()
 
 	recv.logger.Debug("received profiles", zap.String("url_query", req.URL.RawQuery))
-
 	qs := req.URL.Query()
 	if tmp, ok = qs["format"]; ok && (tmp[0] == "jfr") {
 		pa = jfrparser.NewJfrPprofParser()
@@ -289,8 +288,13 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 	sz := 0
 	rs := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
 	for i, pr := range ps {
+		var timestampNs uint64
 		r := rs.AppendEmpty()
-		timestampNs := ns(pm.start)
+		if tmp, ok = qs["format"]; ok && (tmp[0] == "jfr") {
+			timestampNs = ns(pm.start)
+		} else {
+			timestampNs = pm.start
+		}
 		r.SetTimestamp(pcommon.Timestamp(timestampNs))
 		m := r.Attributes()
 		m.PutStr("duration_ns", fmt.Sprint(ns(pm.end-pm.start)))
