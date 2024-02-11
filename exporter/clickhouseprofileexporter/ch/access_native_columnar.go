@@ -71,146 +71,147 @@ func valueToStringArray(v pcommon.Value) ([]string, error) {
 }
 
 // Inserts a profile batch into the clickhouse server using columnar native protocol
-func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
+func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error) {
 	b, err := ch.conn.PrepareBatch(context.Background(), "INSERT INTO profiles_input")
 	if err != nil {
-		return fmt.Errorf("failed to prepare batch: %w", err)
+		return 0, fmt.Errorf("failed to prepare batch: %w", err)
 	}
 
-	// this implementation is tightly coupled to how pyroscope-java and pyroscopereciver work,
-	// specifically receiving a single profile at a time from the agent,
-	// and thus each batched resource logs slice contains a single log record
+	// this implementation is tightly coupled to how pyroscope-java and pyroscopereceiver work
+	timestamp_ns := make([]uint64, 0)
+	typ := make([]string, 0)
+	service_name := make([]string, 0)
+	values_agg := make([][]tuple, 0)
+	sample_types_units := make([][]tuple, 0)
+	period_type := make([]string, 0)
+	period_unit := make([]string, 0)
+	tags := make([][]tuple, 0)
+	duration_ns := make([]uint64, 0)
+	payload_type := make([]string, 0)
+	payload := make([][]byte, 0)
+
 	rl := ls.ResourceLogs()
-	sz := rl.Len()
-
-	timestamp_ns := make([]uint64, sz)
-	typ := make([]string, sz)
-	service_name := make([]string, sz)
-	values_agg := make([][]tuple, sz)
-	sample_types_units := make([][]tuple, sz)
-	period_type := make([]string, sz)
-	period_unit := make([]string, sz)
-	tags := make([][]tuple, sz)
-	duration_ns := make([]uint64, sz)
-	payload_type := make([]string, sz)
-	payload := make([][]byte, sz)
-
 	var (
-		r   plog.LogRecord
-		m   pcommon.Map
-		tmp pcommon.Value
-		tm  map[string]any
+		lr     plog.LogRecordSlice
+		r      plog.LogRecord
+		m      pcommon.Map
+		tmp    pcommon.Value
+		tm     map[string]any
+		offset int
+		s      int
+		idx    int
 	)
-	for i := 0; i < sz; i++ {
-		r = rl.At(i).ScopeLogs().At(0).LogRecords().At(0)
-		m = r.Attributes()
-		timestamp_ns[i] = uint64(r.Timestamp())
+	for i := 0; i < rl.Len(); i++ {
+		lr = rl.At(i).ScopeLogs().At(0).LogRecords()
+		for s = 0; s < lr.Len(); s++ {
+			r = lr.At(s)
+			m = r.Attributes()
+			timestamp_ns = append(timestamp_ns, uint64(r.Timestamp()))
 
-		tmp, _ = m.Get(columnType)
-		typ[i] = tmp.AsString()
+			tmp, _ = m.Get(columnType)
+			typ = append(typ, tmp.AsString())
 
-		tmp, _ = m.Get(columnServiceName)
-		service_name[i] = tmp.AsString()
+			tmp, _ = m.Get(columnServiceName)
+			service_name = append(service_name, tmp.AsString())
 
-		sample_types, _ := m.Get("sample_types")
-
-		sample_units, _ := m.Get("sample_units")
-
-		sample_types_array, err := valueToStringArray(sample_types)
-		if err != nil {
-			return err
-		}
-
-		sample_units_array, err := valueToStringArray(sample_units)
-		if err != nil {
-			return err
-		}
-
-		values_agg_raw, ok := m.Get(columnValuesAgg)
-		if ok {
-			values_agg_tuple, err := valueAggToTuple(&values_agg_raw)
+			sample_types, _ := m.Get("sample_types")
+			sample_units, _ := m.Get("sample_units")
+			sample_types_array, err := valueToStringArray(sample_types)
 			if err != nil {
-				return err
+				return 0, err
 			}
-			values_agg[i] = append(values_agg[i], values_agg_tuple...)
+			sample_units_array, err := valueToStringArray(sample_units)
+			if err != nil {
+				return 0, err
+			}
+			values_agg_raw, ok := m.Get(columnValuesAgg)
+			if ok {
+				values_agg_tuple, err := valueAggToTuple(&values_agg_raw)
+				if err != nil {
+					return 0, err
+				}
+				values_agg = append(values_agg, values_agg_tuple)
+			}
+			sample_types_units_item := make([]tuple, len(sample_types_array))
+			for i, v := range sample_types_array {
+				sample_types_units_item[i] = tuple{v, sample_units_array[i]}
+			}
+			sample_types_units = append(sample_types_units, sample_types_units_item)
+
+			tmp, _ = m.Get(columnPeriodType)
+			period_type = append(period_type, tmp.AsString())
+
+			tmp, _ = m.Get(columnPeriodUnit)
+			period_unit = append(period_unit, tmp.AsString())
+
+			tmp, _ = m.Get(columnTags)
+			tm = tmp.Map().AsRaw()
+			tag, j := make([]tuple, len(tm)), 0
+			for k, v := range tm {
+				tag[j] = tuple{k, v.(string)}
+				j++
+			}
+			tags = append(tags, tag)
+
+			tmp, _ = m.Get(columnDurationNs)
+			dur, _ := strconv.ParseUint(tmp.Str(), 10, 64)
+			duration_ns = append(duration_ns, dur)
+
+			tmp, _ = m.Get(columnPayloadType)
+			payload_type = append(payload_type, tmp.AsString())
+
+			payload = append(payload, r.Body().Bytes().AsRaw())
+
+			idx = offset + s
+			ch.logger.Debug(
+				fmt.Sprintf("batch insert prepared row %d", idx),
+				zap.Uint64(columnTimestampNs, timestamp_ns[idx]),
+				zap.String(columnType, typ[idx]),
+				zap.String(columnServiceName, service_name[idx]),
+				zap.String(columnPeriodType, period_type[idx]),
+				zap.String(columnPeriodUnit, period_unit[idx]),
+				zap.String(columnPayloadType, payload_type[idx]),
+			)
 		}
-
-		sample_types_units_item := make([]tuple, len(sample_types_array))
-		for i, v := range sample_types_array {
-
-			sample_types_units_item[i] = tuple{v, sample_units_array[i]}
-		}
-		sample_types_units[i] = sample_types_units_item
-		tmp, _ = m.Get(columnPeriodType)
-		period_type[i] = tmp.AsString()
-
-		tmp, _ = m.Get(columnPeriodUnit)
-		period_unit[i] = tmp.AsString()
-
-		tmp, _ = m.Get(columnTags)
-		tm = tmp.Map().AsRaw()
-		tag, j := make([]tuple, len(tm)), 0
-		for k, v := range tm {
-			tag[j] = tuple{k, v.(string)}
-			j++
-		}
-		tags[i] = tag
-
-		tmp, _ = m.Get(columnDurationNs)
-		duration_ns[i], _ = strconv.ParseUint(tmp.Str(), 10, 64)
-
-		tmp, _ = m.Get(columnPayloadType)
-		payload_type[i] = tmp.AsString()
-
-		payload[i] = r.Body().Bytes().AsRaw()
-
-		ch.logger.Debug(
-			fmt.Sprintf("batch insert prepared row %d", i),
-			zap.Uint64(columnTimestampNs, timestamp_ns[i]),
-			zap.String(columnType, typ[i]),
-			zap.String(columnServiceName, service_name[i]),
-			zap.String(columnPeriodType, period_type[i]),
-			zap.String(columnPeriodUnit, period_unit[i]),
-			zap.String(columnPayloadType, payload_type[i]),
-		)
+		offset += s
 	}
 
 	// column order here should match table column order
 	if err := b.Column(0).Append(timestamp_ns); err != nil {
-		return err
+		return 0, err
 	}
 	if err := b.Column(1).Append(typ); err != nil {
-		return err
+		return 0, err
 	}
 	if err := b.Column(2).Append(service_name); err != nil {
-		return err
+		return 0, err
 	}
 	if err := b.Column(3).Append(sample_types_units); err != nil {
-		return err
+		return 0, err
 	}
 	if err := b.Column(4).Append(period_type); err != nil {
-		return err
+		return 0, err
 	}
 	if err := b.Column(5).Append(period_unit); err != nil {
-		return err
+		return 0, err
 	}
 	if err := b.Column(6).Append(tags); err != nil {
-		return err
+		return 0, err
 	}
 	if err := b.Column(7).Append(duration_ns); err != nil {
-		return err
+		return 0, err
 	}
 	if err := b.Column(8).Append(payload_type); err != nil {
-		return err
+		return 0, err
 	}
 
 	if err := b.Column(9).Append(payload); err != nil {
-		return err
+		return 0, err
 	}
 	if err := b.Column(10).Append(values_agg); err != nil {
-		return err
+		return 0, err
 	}
-	return b.Send()
+	return offset, b.Send()
 }
 
 // Closes the clickhouse connection pool
