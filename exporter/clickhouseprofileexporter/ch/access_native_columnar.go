@@ -171,6 +171,7 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 			zap.String(columnServiceName, service_name[i]),
 			zap.String(columnPeriodType, period_type[i]),
 			zap.String(columnPeriodUnit, period_unit[i]),
+			zap.Any(columnSampleTypesUnits, sample_types_units[i]),
 			zap.String(columnPayloadType, payload_type[i]),
 		)
 	}
