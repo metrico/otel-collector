@@ -30,7 +30,7 @@ type clickhouseProfileExporter struct {
 
 type clickhouseAccess interface {
 	// Inserts a profile batch into the clickhouse server
-	InsertBatch(profiles plog.Logs) error
+	InsertBatch(profiles plog.Logs) (int, error)
 
 	// Shuts down the clickhouse connection
 	Shutdown() error
@@ -63,13 +63,14 @@ func newClickhouseProfileExporter(ctx context.Context, set *exporter.CreateSetti
 // Sends the profiles to clickhouse server using the configured connection
 func (exp *clickhouseProfileExporter) send(ctx context.Context, logs plog.Logs) error {
 	start := time.Now().UnixMilli()
-	if err := exp.ch.InsertBatch(logs); err != nil {
+	sz, err := exp.ch.InsertBatch(logs)
+	if err != nil {
 		otelcolExporterClickhouseProfileBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start, metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError)))
 		exp.logger.Error(fmt.Sprintf("failed to insert batch: [%s]", err.Error()))
 		return err
 	}
 	otelcolExporterClickhouseProfileBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start, metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeSuccess)))
-	exp.logger.Info("inserted batch", zap.Int("size", logs.ResourceLogs().Len()))
+	exp.logger.Info("inserted batch", zap.Int("size", sz))
 	return nil
 }
 
