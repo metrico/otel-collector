@@ -60,7 +60,7 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata) ([
 		values = [2]int64{1, 0}
 	)
 
-	pa.jfrParser = jfr_parser.NewParser(jfr.Bytes(), jfr_parser.Options{SymbolProcessor: nopSymbolProcessor})
+	pa.jfrParser = jfr_parser.NewParser(jfr.Bytes(), jfr_parser.Options{SymbolProcessor: processSyms})
 
 	if md.SampleRateHertz == 0 {
 		period = 1
@@ -127,8 +127,6 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata) ([
 	}
 	return ps, nil
 }
-
-func nopSymbolProcessor(ref *jfr_types.SymbolList) {}
 
 // TODO: hash location lists, merge-sort similar samples and free unused pprof objects
 func (pa *jfrPprofParser) addStacktrace(sampleType sampleType, ref jfr_types.StackTraceRef, values []int64) {
