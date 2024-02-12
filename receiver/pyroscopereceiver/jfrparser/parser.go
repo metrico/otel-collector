@@ -81,7 +81,7 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata) ([
 		case pa.jfrParser.TypeMap.T_EXECUTION_SAMPLE:
 			values[0] = 1 * int64(period)
 			ts := pa.jfrParser.GetThreadState(pa.jfrParser.ExecutionSample.State)
-			if ts != nil && ts.Name == "STATE_RUNNABLE" {
+			if ts != nil && ts.Name != "STATE_SLEEPING" {
 				pa.addStacktrace(sampleTypeCpu, pa.jfrParser.ExecutionSample.StackTrace, values[:1])
 			}
 			// TODO: this code is from github/grafana/pyroscope, need to validate that the qryn.js query simulator handles this branch as expected for wall
