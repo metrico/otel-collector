@@ -68,7 +68,7 @@ func postProcessProf(profile *profile.Profile, attrs *pcommon.Map) {
 			}
 			for j := range node.values {
 				node.values[j].total += sample.Value[j]
-				if j == 0 {
+				if i == 0 {
 					node.values[j].self += sample.Value[j]
 				}
 			}

@@ -91,6 +91,8 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error)
 	duration_ns := make([]uint64, 0)
 	payload_type := make([]string, 0)
 	payload := make([][]byte, 0)
+	tree := make([][]tuple, 0)
+	functions := make([][]tuple, 0)
 
 	rl := ls.ResourceLogs()
 	var (
@@ -164,6 +166,20 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error)
 
 			payload = append(payload, r.Body().Bytes().AsRaw())
 
+			_functions, err := readFunctionsFromMap(m)
+			if err != nil {
+				return 0, err
+			}
+
+			functions = append(functions, _functions)
+
+			_tree, err := readTreeFromMap(m)
+			if err != nil {
+				return 0, err
+			}
+
+			tree = append(tree, _tree)
+
 			idx = offset + s
 			ch.logger.Debug(
 				fmt.Sprintf("batch insert prepared row %d", idx),
@@ -212,6 +228,13 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error)
 		return 0, err
 	}
 	if err := b.Column(10).Append(values_agg); err != nil {
+		return 0, err
+	}
+
+	if err := b.Column(11).Append(tree); err != nil {
+		return 0, err
+	}
+	if err := b.Column(12).Append(functions); err != nil {
 		return 0, err
 	}
 	return offset, b.Send()
