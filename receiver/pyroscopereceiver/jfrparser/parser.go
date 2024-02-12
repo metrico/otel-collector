@@ -118,6 +118,7 @@ func (pa *jfrPprofParser) Parse(jfr *bytes.Buffer, md profile_types.Metadata) ([
 		// assuming jfr-pprof conversion should not expand memory footprint, transitively applying jfr limit on pprof
 		pr.prof.Payload = new(bytes.Buffer)
 		pr.pprof.WriteUncompressed(pr.prof.Payload)
+		pr.prof.Profile = pr.pprof
 
 		// Calculate values_agg based on the requirements
 		valuesAgg := calculateValuesAgg(pr.pprof)

@@ -1,7 +1,9 @@
 package ch
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"strconv"
 
@@ -94,6 +96,8 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	duration_ns := make([]uint64, sz)
 	payload_type := make([]string, sz)
 	payload := make([][]byte, sz)
+	functions := make([][]tuple, sz)
+	tree := make([][]tuple, sz)
 
 	var (
 		r   plog.LogRecord
@@ -164,6 +168,16 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 
 		payload[i] = r.Body().Bytes().AsRaw()
 
+		functions[i], err = readFunctionsFromMap(m)
+		if err != nil {
+			return err
+		}
+
+		tree[i], err = readTreeFromMap(m)
+		if err != nil {
+			return err
+		}
+
 		ch.logger.Debug(
 			fmt.Sprintf("batch insert prepared row %d", i),
 			zap.Uint64(columnTimestampNs, timestamp_ns[i]),
@@ -172,6 +186,8 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 			zap.String(columnPeriodType, period_type[i]),
 			zap.String(columnPeriodUnit, period_unit[i]),
 			zap.String(columnPayloadType, payload_type[i]),
+			zap.Int("functions", len(functions)),
+			zap.Int("tree", len(tree)),
 		)
 	}
 
@@ -210,6 +226,14 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) error {
 	if err := b.Column(10).Append(values_agg); err != nil {
 		return err
 	}
+
+	if err := b.Column(11).Append(tree); err != nil {
+		return err
+	}
+	if err := b.Column(12).Append(functions); err != nil {
+		return err
+	}
+
 	return b.Send()
 }
 
@@ -230,6 +254,95 @@ func valueAggToTuple(value *pcommon.Value) ([]tuple, error) {
 			value_agg_any_array[1],
 			int32(value_agg_any_array[2].(int64)),
 		})
+	}
+	return res, nil
+}
+
+func readFunctionsFromMap(m pcommon.Map) ([]tuple, error) {
+	raw, _ := m.Get("functions")
+	bRaw := bytes.NewReader(raw.Bytes().AsRaw())
+	size, err := binary.ReadVarint(bRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	res := make([]tuple, size)
+
+	for i := int64(0); i < size; i++ {
+		id, err := binary.ReadUvarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+		size, err := binary.ReadVarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		name := make([]byte, size)
+		_, err = bRaw.Read(name)
+		if err != nil {
+			return nil, err
+		}
+		res[i] = tuple{id, string(name)}
+	}
+	return res, nil
+}
+
+func readTreeFromMap(m pcommon.Map) ([]tuple, error) {
+	raw, _ := m.Get("tree")
+	bRaw := bytes.NewReader(raw.Bytes().AsRaw())
+	size, err := binary.ReadVarint(bRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	res := make([]tuple, size)
+
+	for i := int64(0); i < size; i++ {
+		parentId, err := binary.ReadUvarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		fnId, err := binary.ReadUvarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		nodeId, err := binary.ReadUvarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		size, err := binary.ReadVarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		values := make([]tuple, size)
+		for i := range values {
+			size, err := binary.ReadVarint(bRaw)
+			if err != nil {
+				return nil, err
+			}
+			name := make([]byte, size)
+			_, err = bRaw.Read(name)
+			if err != nil {
+				return nil, err
+			}
+
+			self, err := binary.ReadVarint(bRaw)
+			if err != nil {
+				return nil, err
+			}
+
+			total, err := binary.ReadVarint(bRaw)
+			if err != nil {
+				return nil, err
+			}
+			values[i] = tuple{name, self, total}
+		}
+		res[i] = tuple{parentId, fnId, nodeId, values}
 	}
 	return res, nil
 }

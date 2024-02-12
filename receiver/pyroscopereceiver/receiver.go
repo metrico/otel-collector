@@ -300,6 +300,7 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		if err != nil {
 			return logs, fmt.Errorf("failed to parse sample types: %v", err)
 		}
+		postProcessProf(pr.Profile, &m)
 		r.Body().SetEmptyBytes().FromRaw(pr.Payload.Bytes())
 		sz += pr.Payload.Len()
 		recv.logger.Debug(

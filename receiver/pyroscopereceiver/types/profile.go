@@ -2,6 +2,7 @@ package profile
 
 import (
 	"bytes"
+	pprof_proto "github.com/google/pprof/profile"
 )
 
 // Enumeration of low-level payload type that are supported by the pipeline
@@ -31,6 +32,7 @@ type ProfileIR struct {
 	Payload          *bytes.Buffer
 	PayloadType      PayloadType
 	ValueAggregation interface{}
+	Profile          *pprof_proto.Profile
 }
 
 type SampleType struct {
