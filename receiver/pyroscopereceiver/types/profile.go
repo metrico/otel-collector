@@ -29,6 +29,8 @@ type ProfileType struct {
 // Parser IR for profile processing
 type ProfileIR struct {
 	Type             ProfileType
+	DurationNano     int64
+	TimeStampNao     int64
 	Payload          *bytes.Buffer
 	PayloadType      PayloadType
 	ValueAggregation interface{}
