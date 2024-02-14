@@ -81,6 +81,7 @@ func (pa *nodePprofParser) Parse(data *bytes.Buffer, md profile_types.Metadata) 
 		Type:             profileTypeInfo,
 		TimeStampNao:     pProfData.TimeNanos,
 		DurationNano:     pProfData.DurationNanos,
+		Profile:          pProfData,
 	}
 	profile.Payload = new(bytes.Buffer)
 	pProfData.WriteUncompressed(profile.Payload)

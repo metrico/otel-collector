@@ -80,6 +80,7 @@ func (pa *pProfParser) Parse(data *bytes.Buffer, md profile_types.Metadata) ([]p
 	profile := profile_types.ProfileIR{
 		ValueAggregation: valueAggregates,
 		Type:             profileTypeInfo,
+		Profile:          pProfData,
 	}
 	profile.Payload = new(bytes.Buffer)
 	pProfData.WriteUncompressed(profile.Payload)
