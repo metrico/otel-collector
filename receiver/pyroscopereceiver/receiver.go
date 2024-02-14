@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/nodeparser"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -14,10 +13,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
-	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/pprofparser"
-
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/compress"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/nodeparser"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/pprofparser"
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.opentelemetry.io/collector/component"
