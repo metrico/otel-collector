@@ -467,7 +467,7 @@ func (recv *pyroscopeReceiver) Shutdown(ctx context.Context) error {
 }
 
 func writeResponseNoContent(w http.ResponseWriter) {
-	writeResponse(w, "", http.StatusNoContent, nil)
+	writeResponse(w, "", http.StatusOK, nil)
 }
 
 func writeResponse(w http.ResponseWriter, contentType string, statusCode int, payload []byte) {
