@@ -3,11 +3,12 @@ package pyroscopereceiver
 import (
 	"encoding/binary"
 	"fmt"
+	"sort"
+
 	"github.com/go-faster/city"
 	_ "github.com/go-faster/city"
 	"github.com/google/pprof/profile"
 	"go.opentelemetry.io/collector/pdata/pcommon"
-	"sort"
 )
 
 type profTrieNode struct {

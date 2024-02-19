@@ -3,11 +3,12 @@ package pyroscopereceiver
 import (
 	"context"
 	"fmt"
-	"github.com/go-faster/city"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/go-faster/city"
 
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/testclient"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/plogtest"
