@@ -2,6 +2,7 @@ package profile
 
 import (
 	"bytes"
+
 	pprof_proto "github.com/google/pprof/profile"
 )
 
