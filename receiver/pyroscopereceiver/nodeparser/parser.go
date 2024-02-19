@@ -1,4 +1,4 @@
-package pprofparser
+package nodeparser
 
 import (
 	"bytes"
@@ -20,18 +20,18 @@ type profileWrapper struct {
 	prof  profile_types.ProfileIR
 }
 
-type pProfParser struct {
+type nodePprofParser struct {
 	proftab [sampleTypeCount]*profileWrapper                  // <sample type, (profile, pprof)>
 	samptab [sampleTypeCount]map[uint32]uint32                // <extern jfr stacktrace id,matching pprof sample array index>
 	loctab  [sampleTypeCount]map[uint32]*pprof_proto.Location // <extern jfr funcid, pprof location>
 }
 
-// Creates a pprof parser that parse the accepted jfr buffer
-func NewPprofParser() *pProfParser {
-	return &pProfParser{}
+// Creates a pprof parser that parse the accepted node buffer
+func NewNodePprofParser() *nodePprofParser {
+	return &nodePprofParser{}
 }
 
-func (pa *pProfParser) Parse(data *bytes.Buffer, md profile_types.Metadata) ([]profile_types.ProfileIR, error) {
+func (pa *nodePprofParser) Parse(data *bytes.Buffer, md profile_types.Metadata) ([]profile_types.ProfileIR, error) {
 	// Parse pprof data
 	pProfData, err := pprof_proto.Parse(data)
 	if err != nil {
@@ -52,7 +52,6 @@ func (pa *pProfParser) Parse(data *bytes.Buffer, md profile_types.Metadata) ([]p
 
 	var profiles []profile_types.ProfileIR
 	var profileType string
-
 	switch pProfData.PeriodType.Type {
 	case "cpu":
 		profileType = "process_cpu"
@@ -62,7 +61,7 @@ func (pa *pProfParser) Parse(data *bytes.Buffer, md profile_types.Metadata) ([]p
 		profileType = "mutex"
 	case "goroutine":
 		profileType = "goroutines"
-	case "objects", "space", "alloc", "inuse":
+	case "objects", "space", "alloc_space", "alloc_objects", "inuse", "inuse_space", "inuse_objects":
 		profileType = "memory"
 	case "block":
 		profileType = "block"
@@ -80,12 +79,15 @@ func (pa *pProfParser) Parse(data *bytes.Buffer, md profile_types.Metadata) ([]p
 	profile := profile_types.ProfileIR{
 		ValueAggregation: valueAggregates,
 		Type:             profileTypeInfo,
+		TimeStampNao:     pProfData.TimeNanos,
+		DurationNano:     pProfData.DurationNanos,
 		Profile:          pProfData,
 	}
 	profile.Payload = new(bytes.Buffer)
 	pProfData.WriteUncompressed(profile.Payload)
 	// Append the profile to the result
 	profiles = append(profiles, profile)
+
 	return profiles, nil
 }
 

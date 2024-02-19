@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-faster/city"
+
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/testclient"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/plogtest"
 	"github.com/stretchr/testify/assert"
@@ -45,6 +47,14 @@ func run(t *testing.T, tests []datatest, collectorAddr string, sink *consumertes
 		t.Run(tt.name, func(t *testing.T) {
 			assert.NoError(t, testclient.Ingest(collectorAddr, tt.urlParams, tt.filename), "send shouldn't have been failed")
 			actual := sink.AllLogs()
+			logRecords := actual[0].ResourceLogs().At(0).ScopeLogs().At(0).
+				LogRecords()
+			for i := 0; i < logRecords.Len(); i++ {
+				tree := logRecords.At(i).Attributes().AsRaw()["tree"].([]byte)
+				functions := logRecords.At(i).Attributes().AsRaw()["functions"].([]byte)
+				logRecords.At(i).Attributes().PutStr("tree", fmt.Sprintf("%d", city.CH64(tree)))
+				logRecords.At(i).Attributes().PutStr("functions", fmt.Sprintf("%d", city.CH64(functions)))
+			}
 			assert.NoError(t, plogtest.CompareLogs(tt.expected, actual[0]))
 			sink.Reset()
 		})
@@ -103,6 +113,8 @@ func TestPyroscopeIngestJfrCpu(t *testing.T) {
 				"sample_types": []any{"cpu"},
 				"sample_units": []any{"nanoseconds"},
 				"values_agg":   []any{[]any{"cpu:nanoseconds", 4780000000, 370}},
+				"tree":         "8815968544084662059",
+				"functions":    "12509046500621493878",
 			},
 			body: pb,
 		}}),
@@ -144,6 +156,8 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 					[]any{"alloc_in_new_tlab_objects:count", 977, 471},
 					[]any{"alloc_in_new_tlab_bytes:bytes", 512229376, 471},
 				},
+				"tree":      "16287638610851960464",
+				"functions": "14254943256614951927",
 			},
 			body: pbAllocInNewTlab,
 		},
@@ -163,6 +177,8 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 					"sample_types": []any{"live"},
 					"sample_units": []any{"count"},
 					"values_agg":   []any{[]any{"live:count", 976, 471}},
+					"tree":         "1969295976612920317",
+					"functions":    "14254943256614951927",
 				},
 				body: pbLiveObject,
 			},

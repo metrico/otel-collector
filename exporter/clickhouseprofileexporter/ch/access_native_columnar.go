@@ -1,9 +1,12 @@
 package ch
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -89,6 +92,8 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error)
 	duration_ns := make([]uint64, 0)
 	payload_type := make([]string, 0)
 	payload := make([][]byte, 0)
+	tree := make([][]tuple, 0)
+	functions := make([][]tuple, 0)
 
 	rl := ls.ResourceLogs()
 	var (
@@ -162,6 +167,20 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error)
 
 			payload = append(payload, r.Body().Bytes().AsRaw())
 
+			_functions, err := readFunctionsFromMap(m)
+			if err != nil {
+				return 0, err
+			}
+
+			functions = append(functions, _functions)
+
+			_tree, err := readTreeFromMap(m)
+			if err != nil {
+				return 0, err
+			}
+
+			tree = append(tree, _tree)
+
 			idx = offset + s
 			ch.logger.Debug(
 				fmt.Sprintf("batch insert prepared row %d", idx),
@@ -212,7 +231,23 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error)
 	if err := b.Column(10).Append(values_agg); err != nil {
 		return 0, err
 	}
-	return offset, b.Send()
+
+	if err := b.Column(11).Append(tree); err != nil {
+		return 0, err
+	}
+	if err := b.Column(12).Append(functions); err != nil {
+		return 0, err
+	}
+	err = b.Send()
+	for _, tpls := range tree {
+		for _, t := range tpls {
+			for _, v := range t[3].([]tuple) {
+				triples.put(v)
+			}
+			quadruples.put(t)
+		}
+	}
+	return offset, err
 }
 
 // Closes the clickhouse connection pool
@@ -232,6 +267,145 @@ func valueAggToTuple(value *pcommon.Value) ([]tuple, error) {
 			value_agg_any_array[1],
 			int32(value_agg_any_array[2].(int64)),
 		})
+	}
+	return res, nil
+}
+
+func readFunctionsFromMap(m pcommon.Map) ([]tuple, error) {
+	raw, _ := m.Get("functions")
+	bRaw := bytes.NewReader(raw.Bytes().AsRaw())
+	size, err := binary.ReadVarint(bRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	res := make([]tuple, size)
+
+	for i := int64(0); i < size; i++ {
+		id, err := binary.ReadUvarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+		size, err := binary.ReadVarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		name := make([]byte, size)
+		_, err = bRaw.Read(name)
+		if err != nil {
+			return nil, err
+		}
+		res[i] = tuple{id, string(name)}
+	}
+	return res, nil
+}
+
+type LimitedPool struct {
+	m    sync.RWMutex
+	pool *sync.Pool
+	size int
+}
+
+func (l *LimitedPool) get() tuple {
+	l.m.Lock()
+	defer l.m.Unlock()
+	l.size--
+	if l.size < 0 {
+		l.size = 0
+	}
+	return l.pool.Get().(tuple)
+}
+
+func (l *LimitedPool) put(t tuple) {
+	l.m.Lock()
+	defer l.m.Unlock()
+	if l.size >= 100000 {
+		return
+	}
+	l.size++
+	l.pool.Put(t)
+}
+
+var triples = LimitedPool{
+	pool: &sync.Pool{
+		New: func() interface{} {
+			return make(tuple, 3)
+		},
+	},
+}
+
+var quadruples = LimitedPool{
+	pool: &sync.Pool{
+		New: func() interface{} {
+			return make(tuple, 4)
+		},
+	},
+}
+
+func readTreeFromMap(m pcommon.Map) ([]tuple, error) {
+	raw, _ := m.Get("tree")
+	bRaw := bytes.NewReader(raw.Bytes().AsRaw())
+	size, err := binary.ReadVarint(bRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	res := make([]tuple, size)
+
+	for i := int64(0); i < size; i++ {
+		parentId, err := binary.ReadUvarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		fnId, err := binary.ReadUvarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		nodeId, err := binary.ReadUvarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		size, err := binary.ReadVarint(bRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		values := make([]tuple, size)
+		for i := range values {
+			size, err := binary.ReadVarint(bRaw)
+			if err != nil {
+				return nil, err
+			}
+			name := make([]byte, size)
+			_, err = bRaw.Read(name)
+			if err != nil {
+				return nil, err
+			}
+
+			self, err := binary.ReadVarint(bRaw)
+			if err != nil {
+				return nil, err
+			}
+
+			total, err := binary.ReadVarint(bRaw)
+			if err != nil {
+				return nil, err
+			}
+
+			values[i] = triples.get() // tuple{name, self, total}
+			values[i][0] = name
+			values[i][1] = self
+			values[i][2] = total
+		}
+		res[i] = quadruples.get() // tuple{parentId, fnId, nodeId, values}
+		res[i][0] = parentId
+		res[i][1] = fnId
+		res[i][2] = nodeId
+		res[i][3] = values
 	}
 	return res, nil
 }

@@ -13,10 +13,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
-	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/pprofparser"
-
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/compress"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/jfrparser"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/nodeparser"
+	"github.com/metrico/otel-collector/receiver/pyroscopereceiver/pprofparser"
 	profile_types "github.com/metrico/otel-collector/receiver/pyroscopereceiver/types"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.opentelemetry.io/collector/component"
@@ -168,15 +168,14 @@ func readParams(qs *url.Values) (params, error) {
 		p   params = params{}
 	)
 
-	if tmp, ok = qsv["from"]; !ok {
-		return p, fmt.Errorf("required start time is missing")
+	tmp, ok = qsv["from"]
+	if ok {
+		start, err := strconv.ParseUint(tmp[0], 10, 64)
+		if err != nil {
+			return p, fmt.Errorf("failed to parse start time: %w", err)
+		}
+		p.start = start
 	}
-	start, err := strconv.ParseUint(tmp[0], 10, 64)
-	if err != nil {
-		return p, fmt.Errorf("failed to parse start time: %w", err)
-	}
-	p.start = start
-
 	if tmp, ok = qsv["name"]; !ok {
 		return p, fmt.Errorf("required labels are missing")
 	}
@@ -200,15 +199,15 @@ func readParams(qs *url.Values) (params, error) {
 	}
 	// required app name
 	p.name = tmp[0][:i]
+	tmp, ok = qsv["until"]
+	if ok {
+		end, err := strconv.ParseUint(tmp[0], 10, 64)
+		if err != nil {
+			return p, fmt.Errorf("failed to parse end time: %w", err)
+		}
+		p.end = end
+	}
 
-	if tmp, ok = qsv["until"]; !ok {
-		return p, fmt.Errorf("required end time is missing")
-	}
-	end, err := strconv.ParseUint(tmp[0], 10, 64)
-	if err != nil {
-		return p, fmt.Errorf("failed to parse end time: %w", err)
-	}
-	p.end = end
 	return p, nil
 }
 
@@ -246,6 +245,8 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 	qs := req.URL.Query()
 	if tmp, ok = qs["format"]; ok && (tmp[0] == "jfr") {
 		pa = jfrparser.NewJfrPprofParser()
+	} else if tmp, ok = qs["spyName"]; ok && (tmp[0] == "nodespy") {
+		pa = nodeparser.NewNodePprofParser()
 	} else {
 		pa = pprofparser.NewPprofParser()
 
@@ -289,15 +290,23 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 	rs := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
 	for i, pr := range ps {
 		var timestampNs uint64
+		var durationNs uint64
 		r := rs.AppendEmpty()
 		if tmp, ok = qs["format"]; ok && (tmp[0] == "jfr") {
 			timestampNs = ns(pm.start)
+			durationNs = pm.end - pm.start
+			durationNs = ns(durationNs)
+		} else if tmp, ok = qs["spyName"]; ok && (tmp[0] == "nodespy") {
+			timestampNs = uint64(pr.TimeStampNao)
+			durationNs = uint64(pr.DurationNano)
 		} else {
 			timestampNs = pm.start
+			durationNs = pm.end - pm.start
+			durationNs = ns(durationNs)
 		}
 		r.SetTimestamp(pcommon.Timestamp(timestampNs))
 		m := r.Attributes()
-		m.PutStr("duration_ns", fmt.Sprint(ns(pm.end-pm.start)))
+		m.PutStr("duration_ns", fmt.Sprint(durationNs))
 		m.PutStr("service_name", pm.name)
 		tm := m.PutEmptyMap("tags")
 		for _, l := range pm.labels {
@@ -307,6 +316,7 @@ func (recv *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Reque
 		if err != nil {
 			return logs, fmt.Errorf("failed to parse sample types: %v", err)
 		}
+		postProcessProf(pr.Profile, &m)
 		r.Body().SetEmptyBytes().FromRaw(pr.Payload.Bytes())
 		sz += pr.Payload.Len()
 		recv.logger.Debug(
@@ -352,10 +362,10 @@ func (recv *pyroscopeReceiver) openMultipart(req *http.Request) (multipart.File,
 		}
 	}
 	if part == nil {
-		return nil, fmt.Errorf("required jfr/pprof part is missing")
+		return nil, fmt.Errorf("required jfr/pprof/node part is missing")
 	}
 	fh := part[0]
-	if fh.Filename != formatJfr && fh.Filename != filePprof {
+	if fh.Filename != formatJfr && fh.Filename != filePprof && fh.Filename != formatPprof {
 		return nil, fmt.Errorf("filename is not '%s or %s'", formatJfr, formatPprof)
 	}
 	f, err := fh.Open()
@@ -457,7 +467,7 @@ func (recv *pyroscopeReceiver) Shutdown(ctx context.Context) error {
 }
 
 func writeResponseNoContent(w http.ResponseWriter) {
-	writeResponse(w, "", http.StatusNoContent, nil)
+	writeResponse(w, "", http.StatusOK, nil)
 }
 
 func writeResponse(w http.ResponseWriter, contentType string, statusCode int, payload []byte) {
