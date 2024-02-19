@@ -7,6 +7,7 @@ import (
 	_ "github.com/go-faster/city"
 	"github.com/google/pprof/profile"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"sort"
 )
 
 type profTrieNode struct {
@@ -87,17 +88,28 @@ func postProcessProf(profile *profile.Profile, attrs *pcommon.Map) {
 	}
 	var bFnMap []byte
 	bFnMap = binary.AppendVarint(bFnMap, int64(len(funcs)))
-	for fnId, name := range funcs {
+	indices := make([]uint64, 0, len(funcs))
+	for fnId := range funcs {
+		indices = append(indices, fnId)
+	}
+	sort.Slice(indices, func(i, j int) bool { return indices[i] > indices[j] })
+	for _, fnId := range indices {
 		bFnMap = binary.AppendUvarint(bFnMap, fnId)
-		bFnMap = binary.AppendVarint(bFnMap, int64(len(name)))
-		bFnMap = append(bFnMap, name...)
+		bFnMap = binary.AppendVarint(bFnMap, int64(len(funcs[fnId])))
+		bFnMap = append(bFnMap, funcs[fnId]...)
 	}
 	fnMap := attrs.PutEmptyBytes("functions")
 	fnMap.FromRaw(bFnMap)
 
 	var bNodeMap []byte
 	bNodeMap = binary.AppendVarint(bNodeMap, int64(len(tree)))
-	for _, node := range tree {
+	indices = indices[:0]
+	for tId := range tree {
+		indices = append(indices, tId)
+	}
+	sort.Slice(indices, func(i, j int) bool { return indices[i] > indices[j] })
+	for _, id := range indices {
+		node := tree[id]
 		bNodeMap = binary.AppendUvarint(bNodeMap, node.parentId)
 		bNodeMap = binary.AppendUvarint(bNodeMap, node.funcId)
 		bNodeMap = binary.AppendUvarint(bNodeMap, node.nodeId)
