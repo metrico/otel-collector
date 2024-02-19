@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -237,7 +238,16 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error)
 	if err := b.Column(12).Append(functions); err != nil {
 		return 0, err
 	}
-	return offset, b.Send()
+	err = b.Send()
+	for _, tpls := range tree {
+		for _, t := range tpls {
+			for _, v := range t[3].([]tuple) {
+				triples.put(v)
+			}
+			quadruples.put(t)
+		}
+	}
+	return offset, err
 }
 
 // Closes the clickhouse connection pool
@@ -289,6 +299,48 @@ func readFunctionsFromMap(m pcommon.Map) ([]tuple, error) {
 		res[i] = tuple{id, string(name)}
 	}
 	return res, nil
+}
+
+type LimitedPool struct {
+	m    sync.RWMutex
+	pool *sync.Pool
+	size int
+}
+
+func (l *LimitedPool) get() tuple {
+	l.m.Lock()
+	defer l.m.Unlock()
+	l.size--
+	if l.size < 0 {
+		l.size = 0
+	}
+	return l.pool.Get().(tuple)
+}
+
+func (l *LimitedPool) put(t tuple) {
+	l.m.Lock()
+	defer l.m.Unlock()
+	if l.size >= 100000 {
+		return
+	}
+	l.size++
+	l.pool.Put(t)
+}
+
+var triples = LimitedPool{
+	pool: &sync.Pool{
+		New: func() interface{} {
+			return make(tuple, 3)
+		},
+	},
+}
+
+var quadruples = LimitedPool{
+	pool: &sync.Pool{
+		New: func() interface{} {
+			return make(tuple, 4)
+		},
+	},
 }
 
 func readTreeFromMap(m pcommon.Map) ([]tuple, error) {
@@ -343,9 +395,17 @@ func readTreeFromMap(m pcommon.Map) ([]tuple, error) {
 			if err != nil {
 				return nil, err
 			}
-			values[i] = tuple{name, self, total}
+
+			values[i] = triples.get() // tuple{name, self, total}
+			values[i][0] = name
+			values[i][1] = self
+			values[i][2] = total
 		}
-		res[i] = tuple{parentId, fnId, nodeId, values}
+		res[i] = quadruples.get() // tuple{parentId, fnId, nodeId, values}
+		res[i][0] = parentId
+		res[i][1] = fnId
+		res[i][2] = nodeId
+		res[i][3] = values
 	}
 	return res, nil
 }

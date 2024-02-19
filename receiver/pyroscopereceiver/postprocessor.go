@@ -34,6 +34,16 @@ func hash128To64(l uint64, h uint64) uint64 {
 	return b
 }
 
+func getNodeId(parentId uint64, funcId uint64, traceLevel int) uint64 {
+	buf := make([]byte, 16)
+	binary.LittleEndian.PutUint64(buf[0:8], parentId)
+	binary.LittleEndian.PutUint64(buf[8:16], funcId)
+	if traceLevel > 511 {
+		traceLevel = 511
+	}
+	return city.CH64(buf)>>9 | (uint64(traceLevel) << 55)
+}
+
 func postProcessProf(profile *profile.Profile, attrs *pcommon.Map) {
 	funcs := map[uint64]string{}
 	tree := map[uint64]*profTrieNode{}
@@ -53,7 +63,7 @@ func postProcessProf(profile *profile.Profile, attrs *pcommon.Map) {
 			}
 			fnId := city.CH64([]byte(name))
 			funcs[fnId] = name
-			nodeId := hash128To64(parentId, fnId)
+			nodeId := getNodeId(parentId, fnId, len(sample.Location)-i)
 			node := tree[nodeId]
 			if node == nil {
 				values := make([]profTrieValue, len(profile.SampleType))
