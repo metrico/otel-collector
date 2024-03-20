@@ -23,9 +23,11 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
+	"go.opentelemetry.io/otel/metric"
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 	"go.uber.org/zap"
@@ -44,13 +46,14 @@ var delegate = &protojson.MarshalOptions{
 // tracesExporter for writing spans to ClickHouse
 type tracesExporter struct {
 	logger *zap.Logger
+	meter  metric.Meter
 
 	db      clickhouse.Conn
 	cluster bool
 }
 
 // newTracesExporter returns a SpanWriter for the database
-func newTracesExporter(logger *zap.Logger, cfg *Config) (*tracesExporter, error) {
+func newTracesExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSettings) (*tracesExporter, error) {
 	opts, err := clickhouse.ParseDSN(cfg.DSN)
 	if err != nil {
 		return nil, err
@@ -59,11 +62,17 @@ func newTracesExporter(logger *zap.Logger, cfg *Config) (*tracesExporter, error)
 	if err != nil {
 		return nil, err
 	}
-	return &tracesExporter{
+	exp := &tracesExporter{
 		logger:  logger,
+		meter:   set.MeterProvider.Meter(typeStr),
 		db:      db,
 		cluster: cfg.ClusteredClickhouse,
-	}, nil
+	}
+	if err := initMetrics(exp.meter); err != nil {
+		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
+		return exp, err
+	}
+	return exp, nil
 }
 
 func (e *tracesExporter) exportScopeSpans(serviceName string,
@@ -183,8 +192,11 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 	_ctx := context.WithValue(ctx, "cluster", e.cluster)
 	start := time.Now()
 	if err := e.exportResourceSapns(_ctx, td.ResourceSpans()); err != nil {
+		otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError, dataTypeTraces)))
+		e.logger.Error(fmt.Sprintf("failed to insert batch: [%s]", err.Error()))
 		return err
 	}
+	otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeSuccess, dataTypeTraces)))
 	e.logger.Debug("pushTraceData", zap.Int("spanCount", td.SpanCount()), zap.String("cost", time.Since(start).String()))
 	return nil
 }

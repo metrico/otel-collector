@@ -54,7 +54,7 @@ processors:
 
 exporters:
   qryn:
-    dsn: tcp://clickhouse-server:9000/qryn?username=qryn&password=demo
+    dsn: clickhouse://0.0.0.0:9000/qryn
     timeout: 10s
     sending_queue:
       queue_size: 100
