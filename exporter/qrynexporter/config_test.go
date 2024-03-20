@@ -45,7 +45,7 @@ func TestLoadConfig(t *testing.T) {
 					RandomizationFactor: 0.5,
 					Multiplier:          1.5,
 				},
-				QueueSettings: QueueSettings{
+				QueueSettings: exporterhelper.QueueSettings{
 					QueueSize: 100,
 				},
 			},

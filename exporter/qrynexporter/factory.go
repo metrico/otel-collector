@@ -42,7 +42,7 @@ func NewFactory() exporter.Factory {
 func createDefaultConfig() component.Config {
 	return &Config{
 		TimeoutSettings: exporterhelper.NewDefaultTimeoutSettings(),
-		QueueSettings:   QueueSettings{QueueSize: exporterhelper.NewDefaultQueueSettings().QueueSize},
+		QueueSettings:   exporterhelper.NewDefaultQueueSettings(),
 		BackOffConfig:   configretry.NewDefaultBackOffConfig(),
 		DSN:             defaultDSN,
 	}
@@ -68,7 +68,7 @@ func createTracesExporter(
 		oce.pushTraceData,
 		exporterhelper.WithShutdown(oce.Shutdown),
 		exporterhelper.WithTimeout(c.TimeoutSettings),
-		exporterhelper.WithQueue(c.enforcedQueueSettings()),
+		exporterhelper.WithQueue(c.QueueSettings),
 		exporterhelper.WithRetry(c.BackOffConfig),
 	)
 }
@@ -93,7 +93,7 @@ func createLogsExporter(
 		exporter.pushLogsData,
 		exporterhelper.WithShutdown(exporter.Shutdown),
 		exporterhelper.WithTimeout(c.TimeoutSettings),
-		exporterhelper.WithQueue(c.enforcedQueueSettings()),
+		exporterhelper.WithQueue(c.QueueSettings),
 		exporterhelper.WithRetry(c.BackOffConfig),
 	)
 }
@@ -118,7 +118,7 @@ func createMetricsExporter(
 		exporter.pushMetricsData,
 		exporterhelper.WithShutdown(exporter.Shutdown),
 		exporterhelper.WithTimeout(c.TimeoutSettings),
-		exporterhelper.WithQueue(c.enforcedQueueSettings()),
+		exporterhelper.WithQueue(c.QueueSettings),
 		exporterhelper.WithRetry(c.BackOffConfig),
 	)
 }
