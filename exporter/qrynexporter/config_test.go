@@ -46,7 +46,10 @@ func TestLoadConfig(t *testing.T) {
 					Multiplier:          1.5,
 				},
 				QueueSettings: exporterhelper.QueueSettings{
-					QueueSize: 100,
+					Enabled:      true,
+					QueueSize:    100,
+					NumConsumers: 10,
+					StorageID:    nil,
 				},
 			},
 		},
