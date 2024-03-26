@@ -31,7 +31,7 @@ const (
 // NewFactory creates a factory for Logging exporter
 func NewFactory() exporter.Factory {
 	return exporter.NewFactory(
-		typeStr,
+		component.MustNewType(typeStr),
 		createDefaultConfig,
 		exporter.WithTraces(createTracesExporter, stability),
 		exporter.WithLogs(createLogsExporter, stability),
