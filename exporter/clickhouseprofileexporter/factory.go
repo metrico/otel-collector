@@ -46,7 +46,7 @@ func createLogsExporter(ctx context.Context, set exporter.CreateSettings, cfg co
 // Creates a factory for the clickhouse profile exporter.
 func NewFactory() exporter.Factory {
 	return exporter.NewFactory(
-		typeStr,
+		component.MustNewType(typeStr),
 		createDefaultConfig,
 		exporter.WithLogs(createLogsExporter, component.StabilityLevelAlpha),
 	)

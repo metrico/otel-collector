@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -451,7 +452,7 @@ func (recv *pyroscopeReceiver) Start(_ context.Context, host component.Host) err
 	go func() {
 		defer recv.shutdownWg.Done()
 		if err := recv.httpServer.Serve(l); !errors.Is(err, http.ErrServerClosed) && err != nil {
-			host.ReportFatalError(err)
+			log.Fatalf("HTTP server failed: %v", err)
 		}
 	}()
 	return nil

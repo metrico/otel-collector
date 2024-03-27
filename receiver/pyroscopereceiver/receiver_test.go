@@ -65,7 +65,7 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 	addr := getAvailableLocalTcpPort(t)
 	cfg := &Config{
 		Protocols: Protocols{
-			Http: &confighttp.HTTPServerSettings{
+			Http: &confighttp.ServerConfig{
 				Endpoint:           addr,
 				MaxRequestBodySize: defaultMaxRequestBodySize,
 			},
