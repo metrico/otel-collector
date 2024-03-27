@@ -10,7 +10,7 @@ import (
 type Config struct {
 	exporterhelper.TimeoutSettings `mapstructure:",squash"`
 	configretry.BackOffConfig      `mapstructure:"retry_on_failure"`
-	QueueSettings                  `mapstructure:"sending_queue"`
+	exporterhelper.QueueSettings   `mapstructure:"sending_queue"`
 
 	// DSN is the ClickHouse server Data Source Name.
 	// For tcp protocol reference: [ClickHouse/clickhouse-go#dsn](https://github.com/ClickHouse/clickhouse-go#dsn).
@@ -18,22 +18,9 @@ type Config struct {
 	Dsn string `mapstructure:"dsn"`
 }
 
-type QueueSettings struct {
-	// Length of the sending queue
-	QueueSize int `mapstructure:"queue_size"`
-}
-
 var _ component.Config = (*Config)(nil)
 
 // Checks that the receiver configuration is valid
 func (cfg *Config) Validate() error {
 	return nil
-}
-
-func (cfg *Config) enforceQueueSettings() exporterhelper.QueueSettings {
-	return exporterhelper.QueueSettings{
-		Enabled:      true,
-		NumConsumers: 1,
-		QueueSize:    cfg.QueueSettings.QueueSize,
-	}
 }

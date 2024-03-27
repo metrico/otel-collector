@@ -13,9 +13,11 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/value"
+	"go.opentelemetry.io/collector/exporter"
 	conventions "go.opentelemetry.io/collector/model/semconv/v1.5.0"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
 
@@ -28,6 +30,7 @@ const (
 
 type metricsExporter struct {
 	logger *zap.Logger
+	meter  metric.Meter
 
 	db clickhouse.Conn
 
@@ -35,7 +38,7 @@ type metricsExporter struct {
 	cluster   bool
 }
 
-func newMetricsExporter(logger *zap.Logger, cfg *Config) (*metricsExporter, error) {
+func newMetricsExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSettings) (*metricsExporter, error) {
 	opts, err := clickhouse.ParseDSN(cfg.DSN)
 	if err != nil {
 		return nil, err
@@ -44,12 +47,18 @@ func newMetricsExporter(logger *zap.Logger, cfg *Config) (*metricsExporter, erro
 	if err != nil {
 		return nil, err
 	}
-	return &metricsExporter{
+	exp := &metricsExporter{
 		logger:    logger,
+		meter:     set.MeterProvider.Meter(typeStr),
 		db:        db,
 		namespace: cfg.Metrics.Namespace,
 		cluster:   cfg.ClusteredClickhouse,
-	}, nil
+	}
+	if err := initMetrics(exp.meter); err != nil {
+		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
+		return exp, err
+	}
+	return exp, nil
 }
 
 // Shutdown will shutdown the exporter.
@@ -483,11 +492,12 @@ func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metric
 	}
 
 	if err := batchSamplesAndTimeSeries(context.WithValue(ctx, "cluster", e.cluster), e.db, samples, timeSeries); err != nil {
+		otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError, dataTypeMetrics)))
+		e.logger.Error(fmt.Sprintf("failed to insert batch: [%s]", err.Error()))
 		return err
 	}
-
+	otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeSuccess, dataTypeMetrics)))
 	e.logger.Debug("pushMetricsData", zap.Int("samples", len(samples)), zap.Int("timeseries", len(timeSeries)), zap.String("cost", time.Since(start).String()))
-
 	return nil
 }
 
