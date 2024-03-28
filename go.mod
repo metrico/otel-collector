@@ -1,6 +1,6 @@
 module github.com/metrico/otel-collector
 
-go 1.21.3
+go 1.21
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.17.1
