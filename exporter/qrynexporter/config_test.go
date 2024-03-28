@@ -45,8 +45,11 @@ func TestLoadConfig(t *testing.T) {
 					RandomizationFactor: 0.5,
 					Multiplier:          1.5,
 				},
-				QueueSettings: QueueSettings{
-					QueueSize: 100,
+				QueueSettings: exporterhelper.QueueSettings{
+					Enabled:      true,
+					QueueSize:    100,
+					NumConsumers: 10,
+					StorageID:    nil,
 				},
 			},
 		},

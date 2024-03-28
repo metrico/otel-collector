@@ -11,7 +11,7 @@ import (
 // Configures supported protocols
 type Protocols struct {
 	// Http.MaxRequestBodySize configures max uncompressed body size in bytes
-	Http *confighttp.HTTPServerSettings `mapstructure:"http"`
+	Http *confighttp.ServerConfig `mapstructure:"http"`
 }
 
 // Represents the receiver config within the collector's config.yaml

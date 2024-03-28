@@ -28,9 +28,7 @@ const (
 type Config struct {
 	exporterhelper.TimeoutSettings `mapstructure:",squash"`
 	configretry.BackOffConfig      `mapstructure:"retry_on_failure"`
-	// QueueSettings is a subset of exporterhelper.QueueSettings,
-	// because only QueueSize is user-settable.
-	QueueSettings QueueSettings `mapstructure:"sending_queue"`
+	exporterhelper.QueueSettings   `mapstructure:"sending_queue"`
 
 	ClusteredClickhouse bool `mapstructure:"clustered_clickhouse"`
 
@@ -43,12 +41,6 @@ type Config struct {
 	Logs LogsConfig `mapstructure:"logs"`
 	// Metrics is used to configure the metric data.
 	Metrics MetricsConfig `mapstructure:"metrics"`
-}
-
-// QueueSettings is a subset of exporterhelper.QueueSettings.
-type QueueSettings struct {
-	// QueueSize set the length of the sending queue
-	QueueSize int `mapstructure:"queue_size"`
 }
 
 // LogsConfig holds the configuration for log data.
@@ -73,12 +65,4 @@ var _ component.Config = (*Config)(nil)
 // Validate checks if the exporter configuration is valid
 func (cfg *Config) Validate() error {
 	return nil
-}
-
-func (cfg *Config) enforcedQueueSettings() exporterhelper.QueueSettings {
-	return exporterhelper.QueueSettings{
-		Enabled:      true,
-		NumConsumers: 1,
-		QueueSize:    cfg.QueueSettings.QueueSize,
-	}
 }

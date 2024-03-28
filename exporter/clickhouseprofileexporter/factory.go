@@ -19,7 +19,7 @@ const (
 func createDefaultConfig() component.Config {
 	return &Config{
 		TimeoutSettings: exporterhelper.NewDefaultTimeoutSettings(),
-		QueueSettings:   QueueSettings{QueueSize: exporterhelper.NewDefaultQueueSettings().QueueSize},
+		QueueSettings:   exporterhelper.NewDefaultQueueSettings(),
 		BackOffConfig:   configretry.NewDefaultBackOffConfig(),
 		Dsn:             defaultDsn,
 	}
@@ -37,7 +37,7 @@ func createLogsExporter(ctx context.Context, set exporter.CreateSettings, cfg co
 		cfg,
 		exp.send,
 		exporterhelper.WithShutdown(exp.Shutdown),
-		exporterhelper.WithQueue(c.enforceQueueSettings()),
+		exporterhelper.WithQueue(c.QueueSettings),
 		exporterhelper.WithTimeout(c.TimeoutSettings),
 		exporterhelper.WithRetry(c.BackOffConfig),
 	)
@@ -46,7 +46,7 @@ func createLogsExporter(ctx context.Context, set exporter.CreateSettings, cfg co
 // Creates a factory for the clickhouse profile exporter.
 func NewFactory() exporter.Factory {
 	return exporter.NewFactory(
-		typeStr,
+		component.MustNewType(typeStr),
 		createDefaultConfig,
 		exporter.WithLogs(createLogsExporter, component.StabilityLevelAlpha),
 	)
