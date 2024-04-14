@@ -22,6 +22,7 @@ import (
 
 const (
 	defaultDSN = "tcp://127.0.0.1:9000/cloki"
+	DistinguishLogsMetrics = 0
 )
 
 // Config defines configuration for logging exporter.
@@ -41,6 +42,10 @@ type Config struct {
 	Logs LogsConfig `mapstructure:"logs"`
 	// Metrics is used to configure the metric data.
 	Metrics MetricsConfig `mapstructure:"metrics"`
+	// DistinguishLogsMetrics controls whether to distinguish logs (1) and metrics (2) when saving.
+	// If 0, all entries will have type 0.
+	// If 1, logs will have type 1 and metrics will have type 2.
+	DistinguishLogsMetrics int `mapstructure:"distinguish_logs_metrics"`
 }
 
 // LogsConfig holds the configuration for log data.
@@ -64,5 +69,8 @@ var _ component.Config = (*Config)(nil)
 
 // Validate checks if the exporter configuration is valid
 func (cfg *Config) Validate() error {
+	if cfg.DistinguishLogsMetrics != 0 && cfg.DistinguishLogsMetrics != 1 {
+		return fmt.Errorf("distinguish_logs_metrics must be either 0 or 1")
+	}
 	return nil
 }

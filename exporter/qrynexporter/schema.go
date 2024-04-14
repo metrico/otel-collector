@@ -42,7 +42,8 @@ var (
   fingerprint,
   timestamp_ns,
   value, 
-  string)`, dist)
+  string,
+  type)`, dist)
 	}
 	TimeSerieSQL = func(clustered bool) string {
 		dist := ""
@@ -53,7 +54,8 @@ var (
   date, 
   fingerprint,
   labels,
-  name)`, dist)
+  name,
+  type)`, dist)
 	}
 )
 
@@ -97,7 +99,8 @@ type Trace struct {
 //	fingerprint UInt64,
 //	timestamp_ns Int64 CODEC(DoubleDelta),
 //	value Float64 CODEC(Gorilla),
-//	string String
+//	string String,
+//	type UInt8
 //
 // ) ENGINE = MergeTree
 // PARTITION BY toStartOfDay(toDateTime(timestamp_ns / 1000000000))
@@ -107,6 +110,7 @@ type Sample struct {
 	TimestampNs int64   `ch:"timestamp_ns"`
 	Value       float64 `ch:"value"`
 	String      string  `ch:"string"`
+	Type        int     `ch:"type"`
 }
 
 // TimeSerie represent TimeSerie
@@ -116,7 +120,8 @@ type Sample struct {
 //	date Date,
 //	fingerprint UInt64,
 //	labels String,
-//	name String
+//	name String,
+//	type UInt8
 //
 // ) ENGINE = ReplacingMergeTree(date)
 // PARTITION BY date
@@ -126,4 +131,5 @@ type TimeSerie struct {
 	Fingerprint uint64    `ch:"fingerprint"`
 	Labels      string    `ch:"labels"`
 	Name        string    `ch:"name"`
+	Type        int       `ch:"type"`
 }
