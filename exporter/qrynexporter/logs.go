@@ -2,6 +2,7 @@ package qrynexporter
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -34,12 +35,14 @@ type logsExporter struct {
 	logger *zap.Logger
 	meter  metric.Meter
 
-	db clickhouse.Conn
+	db *sql.DB
 
 	attributeLabels string
 	resourceLabels  string
 	format          string
 	cluster         bool
+
+	distinguishLogsMetrics int
 }
 
 func newLogsExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSettings) (*logsExporter, error) {
@@ -47,10 +50,7 @@ func newLogsExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSettin
 	if err != nil {
 		return nil, err
 	}
-	db, err := clickhouse.Open(opts)
-	if err != nil {
-		return nil, err
-	}
+	db := clickhouse.OpenDB(opts)
 	exp := &logsExporter{
 		logger:          logger,
 		meter:           set.MeterProvider.Meter(typeStr),
@@ -59,6 +59,8 @@ func newLogsExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSettin
 		attributeLabels: cfg.Logs.AttributeLabels,
 		resourceLabels:  cfg.Logs.ResourceLabels,
 		cluster:         cfg.ClusteredClickhouse,
+
+		distinguishLogsMetrics: cfg.DistinguishLogsMetrics,
 	}
 	if err := initMetrics(exp.meter); err != nil {
 		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
@@ -380,7 +382,7 @@ func convertLogToSample(fingerprint model.Fingerprint, log plog.LogRecord, res p
 		Fingerprint: uint64(fingerprint),
 		TimestampNs: timestampFromLogRecord(log).UnixNano(),
 		String:      line,
-		Type:        uint8(logType),
+		Type:        logType,
 	}, nil
 }
 
@@ -394,7 +396,7 @@ func convertLogToTimeSerie(fingerprint model.Fingerprint, log plog.LogRecord, la
 		Fingerprint: uint64(fingerprint),
 		Labels:      string(labelsJSON),
 		Name:        string(labelSet[model.MetricNameLabel]),
-		Type:        uint8(logType),
+		Type:        logType,
 	}
 	return timeSerie, nil
 }
@@ -428,7 +430,7 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 				removeAttributes(resource.Attributes(), mergedLabels)
 
 				logType := 0
-				if e.cfg.DistinguishLogsMetrics == 1 {
+				if e.distinguishLogsMetrics == 1 {
 					logType = 1 // All logs are type 1 as per the specification
 				}
 
@@ -458,36 +460,17 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 	return nil
 }
 
-func batchSamplesAndTimeSeries(ctx context.Context, db clickhouse.Conn, samples []Sample, timeSeries []TimeSerie) error {
+func batchSamplesAndTimeSeries(ctx context.Context, db *sql.DB, samples []Sample, timeSeries []TimeSerie) error {
 	isCluster := ctx.Value("cluster").(bool)
-	samplesBatch, err := db.PrepareBatch(ctx, samplesSQL(isCluster))
-	if err != nil {
-		return err
-	}
-	for _, sample := range samples {
-		if err := samplesBatch.AppendStruct(&sample); err != nil {
+	return withTransaction(ctx, db, func(tx *sql.Tx) error {
+		if err := executeBatchInsert(ctx, tx, samples, samplesSQL(isCluster)); err != nil {
 			return err
 		}
-	}
-	if err := samplesBatch.Send(); err != nil {
-		return err
-	}
-
-	timeSeriesBatch, err := db.PrepareBatch(ctx, TimeSerieSQL(isCluster))
-	if err != nil {
-		return err
-	}
-	for _, timeSerie := range timeSeries {
-		if err := timeSeriesBatch.AppendStruct(&timeSerie); err != nil {
+		if err := executeBatchInsert(ctx, tx, timeSeries, TimeSerieSQL(isCluster)); err != nil {
 			return err
 		}
-	}
-	if err := timeSeriesBatch.Send(); err != nil {
-		return err
-	}
-
-	return nil
-
+		return nil
+	})
 }
 
 func convertAttributesToLabels(attributes pcommon.Map) model.LabelSet {

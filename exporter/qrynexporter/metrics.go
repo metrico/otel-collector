@@ -2,6 +2,7 @@ package qrynexporter
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -32,10 +33,12 @@ type metricsExporter struct {
 	logger *zap.Logger
 	meter  metric.Meter
 
-	db clickhouse.Conn
+	db *sql.DB
 
 	namespace string
 	cluster   bool
+
+	distinguishLogsMetrics int
 }
 
 func newMetricsExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSettings) (*metricsExporter, error) {
@@ -43,16 +46,15 @@ func newMetricsExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSet
 	if err != nil {
 		return nil, err
 	}
-	db, err := clickhouse.Open(opts)
-	if err != nil {
-		return nil, err
-	}
+	db := clickhouse.OpenDB(opts)
 	exp := &metricsExporter{
 		logger:    logger,
 		meter:     set.MeterProvider.Meter(typeStr),
 		db:        db,
 		namespace: cfg.Metrics.Namespace,
 		cluster:   cfg.ClusteredClickhouse,
+
+		distinguishLogsMetrics: cfg.DistinguishLogsMetrics,
 	}
 	if err := initMetrics(exp.meter); err != nil {
 		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
@@ -165,7 +167,7 @@ func (e *metricsExporter) exportNumberDataPoint(pt pmetric.NumberDataPoint,
 	metricName := buildPromCompliantName(metric, e.namespace)
 	labelSet := buildLabelSet(resource, pt.Attributes(), model.MetricNameLabel, metricName)
 	logType := 0
-	if e.cfg.DistinguishLogsMetrics == 1 {
+	if e.distinguishLogsMetrics == 1 {
 		logType = 2
 	}
 	fingerprint := labelSet.Fingerprint()
@@ -173,7 +175,7 @@ func (e *metricsExporter) exportNumberDataPoint(pt pmetric.NumberDataPoint,
 		TimestampNs: pt.Timestamp().AsTime().UnixNano(),
 		Fingerprint: uint64(fingerprint),
 		String:      string(labelSet[model.LabelName(model.MetricNameLabel)]),
-		Type:        uint8(logType),
+		Type:        logType,
 	}
 	switch pt.ValueType() {
 	case pmetric.NumberDataPointValueTypeInt:
@@ -196,7 +198,7 @@ func (e *metricsExporter) exportNumberDataPoint(pt pmetric.NumberDataPoint,
 		Date:        pt.Timestamp().AsTime(),
 		Labels:      string(labelsJSON),
 		Name:        string(labelSet[model.LabelName(model.MetricNameLabel)]),
-		Type:        uint8(logType),
+		Type:        logType,
 	}
 	*timeSeries = append(*timeSeries, *timeSerie)
 	return nil
@@ -243,7 +245,7 @@ func (e *metricsExporter) exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 	}
 
 	logType := 0
-	if e.cfg.DistinguishLogsMetrics == 1 {
+	if e.distinguishLogsMetrics == 1 {
 		logType = 2
 	}
 	fingerprint := sumLabels.Fingerprint()
@@ -252,7 +254,7 @@ func (e *metricsExporter) exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 		Date:        pt.Timestamp().AsTime(),
 		Labels:      string(labelsJSON),
 		Name:        string(sumLabels[model.LabelName(model.MetricNameLabel)]),
-		Type:        uint8(logType),
+		Type:        logType,
 	}
 	*timeSeries = append(*timeSeries, timeSerie)
 	sum := Sample{
@@ -260,7 +262,7 @@ func (e *metricsExporter) exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 		Value:       pt.Sum(),
 		TimestampNs: timestampNs,
 		String:      string(sumLabels[model.LabelName(model.MetricNameLabel)]),
-		Type:        uint8(logType),
+		Type:        logType,
 	}
 	if pt.Flags().NoRecordedValue() {
 		sum.Value = math.Float64frombits(value.StaleNaN)
@@ -279,7 +281,7 @@ func (e *metricsExporter) exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 		Date:        pt.Timestamp().AsTime(),
 		Labels:      string(labelsJSON),
 		Name:        string(countLabels[model.LabelName(model.MetricNameLabel)]),
-		Type:        uint8(logType),
+		Type:        logType,
 	}
 	*timeSeries = append(*timeSeries, timeSerie)
 	count := Sample{
@@ -287,7 +289,7 @@ func (e *metricsExporter) exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 		Value:       pt.Sum(),
 		TimestampNs: timestampNs,
 		String:      string(countLabels[model.LabelName(model.MetricNameLabel)]),
-		Type:        uint8(logType),
+		Type:        logType,
 	}
 	if pt.Flags().NoRecordedValue() {
 		count.Value = math.Float64frombits(value.StaleNaN)
@@ -309,7 +311,7 @@ func (e *metricsExporter) exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 			Date:        pt.Timestamp().AsTime(),
 			Labels:      string(labelsJSON),
 			Name:        string(qtlabels[model.LabelName(model.MetricNameLabel)]),
-			Type:        uint8(logType),
+			Type:        logType,
 		}
 		*timeSeries = append(*timeSeries, timeSerie)
 		quantile := Sample{
@@ -317,7 +319,7 @@ func (e *metricsExporter) exportSummaryDataPoint(pt pmetric.SummaryDataPoint,
 			Value:       qt.Value(),
 			TimestampNs: timestampNs,
 			String:      string(countLabels[model.LabelName(model.MetricNameLabel)]),
-			Type:        uint8(logType),
+			Type:        logType,
 		}
 		if pt.Flags().NoRecordedValue() {
 			quantile.Value = math.Float64frombits(value.StaleNaN)
@@ -346,7 +348,7 @@ func (e *metricsExporter) exportHistogramDataPoint(pt pmetric.HistogramDataPoint
 	baseName := buildPromCompliantName(metric, e.namespace)
 	timestampNs := pt.Timestamp().AsTime().UnixNano()
 	logType := 0
-	if e.cfg.DistinguishLogsMetrics == 1 {
+	if e.distinguishLogsMetrics == 1 {
 		logType = 2
 	}
 
@@ -363,7 +365,7 @@ func (e *metricsExporter) exportHistogramDataPoint(pt pmetric.HistogramDataPoint
 			Date:        pt.Timestamp().AsTime(),
 			Labels:      string(labelsJSON),
 			Name:        string(sumLabels[model.LabelName(model.MetricNameLabel)]),
-			Type:        uint8(logType),
+			Type:        logType,
 		}
 		*timeSeries = append(*timeSeries, timeSerie)
 		sample := Sample{
@@ -371,7 +373,7 @@ func (e *metricsExporter) exportHistogramDataPoint(pt pmetric.HistogramDataPoint
 			Value:       pt.Sum(),
 			TimestampNs: timestampNs,
 			String:      string(sumLabels[model.LabelName(model.MetricNameLabel)]),
-			Type:        uint8(logType),
+			Type:        logType,
 		}
 		*samples = append(*samples, sample)
 	}
@@ -384,7 +386,7 @@ func (e *metricsExporter) exportHistogramDataPoint(pt pmetric.HistogramDataPoint
 		Value:       float64(pt.Count()),
 		TimestampNs: pt.Timestamp().AsTime().UnixNano(),
 		String:      string(countLabels[model.LabelName(model.MetricNameLabel)]),
-		Type:        uint8(logType),
+		Type:        logType,
 	}
 	*samples = append(*samples, count)
 	labelsJSON, err := json.Marshal(countLabels)
@@ -396,7 +398,7 @@ func (e *metricsExporter) exportHistogramDataPoint(pt pmetric.HistogramDataPoint
 		Date:        pt.Timestamp().AsTime(),
 		Labels:      string(labelsJSON),
 		Name:        string(countLabels[model.LabelName(model.MetricNameLabel)]),
-		Type:        uint8(logType),
+		Type:        logType,
 	}
 	*timeSeries = append(*timeSeries, timeSerie)
 	// cumulative count for conversion to cumulative histogram
@@ -417,7 +419,7 @@ func (e *metricsExporter) exportHistogramDataPoint(pt pmetric.HistogramDataPoint
 			Value:       float64(cumulativeCount),
 			TimestampNs: timestampNs,
 			String:      string(bucketLabels[model.LabelName(model.MetricNameLabel)]),
-			Type:        uint8(logType),
+			Type:        logType,
 		}
 		*samples = append(*samples, bucket)
 		if pt.Flags().NoRecordedValue() {
@@ -428,7 +430,7 @@ func (e *metricsExporter) exportHistogramDataPoint(pt pmetric.HistogramDataPoint
 			Date:        pt.Timestamp().AsTime(),
 			Labels:      string(labelsJSON),
 			Name:        string(countLabels[model.LabelName(model.MetricNameLabel)]),
-			Type:        uint8(logType),
+			Type:        logType,
 		}
 		*timeSeries = append(*timeSeries, timeSerie)
 	}
@@ -439,7 +441,7 @@ func (e *metricsExporter) exportHistogramDataPoint(pt pmetric.HistogramDataPoint
 		Fingerprint: uint64(fingerprint),
 		TimestampNs: timestampNs,
 		String:      string(bucketLabels[model.LabelName(model.MetricNameLabel)]),
-		Type:        uint8(logType),
+		Type:        logType,
 	}
 	if pt.Flags().NoRecordedValue() {
 		infBucket.Value = math.Float64frombits(value.StaleNaN)
@@ -456,7 +458,7 @@ func (e *metricsExporter) exportHistogramDataPoint(pt pmetric.HistogramDataPoint
 		Date:        pt.Timestamp().AsTime(),
 		Labels:      string(labelsJSON),
 		Name:        string(bucketLabels[model.LabelName(model.MetricNameLabel)]),
-		Type:        uint8(logType),
+		Type:        logType,
 	}
 	*timeSeries = append(*timeSeries, timeSerie)
 	return nil

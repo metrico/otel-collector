@@ -45,7 +45,8 @@ func createDefaultConfig() component.Config {
 		QueueSettings:   exporterhelper.NewDefaultQueueSettings(),
 		BackOffConfig:   configretry.NewDefaultBackOffConfig(),
 		DSN:             defaultDSN,
-		DistinguishLogsMetrics: 0, // Set default value as 0
+
+		DistinguishLogsMetrics: defaultDistinguishLogsMetrics,
 	}
 }
 

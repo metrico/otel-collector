@@ -1,6 +1,6 @@
 # Builder stage
 FROM golang:1.22.1-alpine as builder
-RUN apk --update add ca-certificates
+RUN apk --update add ca-certificates bash
 
 WORKDIR /src
 COPY . .
@@ -11,7 +11,8 @@ ENV CGO_ENABLED=0
 RUN cd cmd/otel-collector && go build -tags timetzdata -o /out/otel-collector
 
 # Final stage
-FROM scratch
+FROM golang:1.22.1-alpine
+RUN apk --update add ca-certificates bash
 
 ARG USER_UID=10001
 

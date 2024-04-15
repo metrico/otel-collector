@@ -16,13 +16,13 @@ package qrynexporter
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
 	"unicode/utf8"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -48,7 +48,7 @@ type tracesExporter struct {
 	logger *zap.Logger
 	meter  metric.Meter
 
-	db      clickhouse.Conn
+	db      *sql.DB
 	cluster bool
 }
 
@@ -58,10 +58,7 @@ func newTracesExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSett
 	if err != nil {
 		return nil, err
 	}
-	db, err := clickhouse.Open(opts)
-	if err != nil {
-		return nil, err
-	}
+	db := clickhouse.OpenDB(opts)
 	exp := &tracesExporter{
 		logger:  logger,
 		meter:   set.MeterProvider.Meter(typeStr),
@@ -78,13 +75,14 @@ func newTracesExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSett
 func (e *tracesExporter) exportScopeSpans(serviceName string,
 	ilss ptrace.ScopeSpansSlice,
 	resource pcommon.Resource,
-	batch driver.Batch,
+	batch *sql.Tx,
 	tags map[string]string,
+	sqlBase string,
 ) error {
 	for i := 0; i < ilss.Len(); i++ {
 		extractScopeTags(ilss.At(i).Scope(), tags)
 		spans := ilss.At(i).Spans()
-		err := e.exportSpans(serviceName, spans, resource, batch, tags)
+		err := e.exportSpans(serviceName, spans, resource, batch, tags, sqlBase)
 		if err != nil {
 			return err
 		}
@@ -135,9 +133,11 @@ func (e *tracesExporter) exportSpans(
 	localServiceName string,
 	spans ptrace.SpanSlice,
 	resource pcommon.Resource,
-	batch driver.Batch,
+	batch *sql.Tx,
 	tags map[string]string,
+	sqlBase string,
 ) error {
+	tracesInputs := make([]Trace, 0, spans.Len())
 	for i := 0; i < spans.Len(); i++ {
 		span := spans.At(i)
 		spanLinksToTags(span.Links(), tags)
@@ -146,11 +146,9 @@ func (e *tracesExporter) exportSpans(
 			e.logger.Error("convertTracesInput", zap.Error(err))
 			continue
 		}
-		if err := batch.AppendStruct(tracesInput); err != nil {
-			return err
-		}
+		tracesInputs = append(tracesInputs, *tracesInput)
 	}
-	return nil
+	return executeBatchInsert(context.Background(), batch, tracesInputs, sqlBase)
 }
 
 func extractScopeTags(il pcommon.InstrumentationScope, tags map[string]string) {
@@ -162,36 +160,29 @@ func extractScopeTags(il pcommon.InstrumentationScope, tags map[string]string) {
 	}
 }
 
-func (e *tracesExporter) exportResourceSapns(ctx context.Context, resourceSpans ptrace.ResourceSpansSlice) error {
+func (e *tracesExporter) exportResourceSpans(ctx context.Context, resourceSpans ptrace.ResourceSpansSlice) error {
 	isCluster := ctx.Value("cluster").(bool)
-	batch, err := e.db.PrepareBatch(ctx, tracesInputSQL(isCluster))
-	if err != nil {
-		return err
-	}
+	sqlBase := tracesInputSQL(isCluster)
 
-	for i := 0; i < resourceSpans.Len(); i++ {
-		rs := resourceSpans.At(i)
-		resource := rs.Resource()
-		localServiceName, tags := resourceToServiceNameAndAttributeMap(resource)
-		ilss := rs.ScopeSpans()
-		if err := e.exportScopeSpans(localServiceName, ilss, resource, batch, tags); err != nil {
-			batch.Abort()
-			return err
+	return withTransaction(ctx, e.db, func(batch *sql.Tx) error {
+		for i := 0; i < resourceSpans.Len(); i++ {
+			rs := resourceSpans.At(i)
+			resource := rs.Resource()
+			localServiceName, tags := resourceToServiceNameAndAttributeMap(resource)
+			ilss := rs.ScopeSpans()
+			if err := e.exportScopeSpans(localServiceName, ilss, resource, batch, tags, sqlBase); err != nil {
+				return err
+			}
 		}
-	}
-
-	if err := batch.Send(); err != nil {
-		return err
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // traceDataPusher implements OTEL exporterhelper.traceDataPusher
 func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) error {
 	_ctx := context.WithValue(ctx, "cluster", e.cluster)
 	start := time.Now()
-	if err := e.exportResourceSapns(_ctx, td.ResourceSpans()); err != nil {
+	if err := e.exportResourceSpans(_ctx, td.ResourceSpans()); err != nil {
 		otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError, dataTypeTraces)))
 		e.logger.Error(fmt.Sprintf("failed to insert batch: [%s]", err.Error()))
 		return err

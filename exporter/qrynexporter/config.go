@@ -15,6 +15,8 @@
 package qrynexporter
 
 import (
+	"fmt"
+
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
@@ -22,7 +24,8 @@ import (
 
 const (
 	defaultDSN = "tcp://127.0.0.1:9000/cloki"
-	DistinguishLogsMetrics = 0
+
+	defaultDistinguishLogsMetrics = 0
 )
 
 // Config defines configuration for logging exporter.
@@ -70,7 +73,7 @@ var _ component.Config = (*Config)(nil)
 // Validate checks if the exporter configuration is valid
 func (cfg *Config) Validate() error {
 	if cfg.DistinguishLogsMetrics != 0 && cfg.DistinguishLogsMetrics != 1 {
-		return fmt.Errorf("distinguish_logs_metrics must be either 0 or 1")
+		return fmt.Errorf("DistinguishLogsMetrics must be either 0 or 1")
 	}
 	return nil
 }
