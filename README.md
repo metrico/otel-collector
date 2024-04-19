@@ -106,7 +106,19 @@ receivers:
             - targets: ['exporter:8080']
   influxdb:
     endpoint: 0.0.0.0:8086
-    
+connectors:
+  spanmetrics:
+    namespace: span.metrics
+    metrics_exporter: otlp/spanmetrics
+    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
+    dimensions_cache_size: 1500
+  servicegraph:
+    metrics_exporter: otlp/spanmetrics
+    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
+    dimensions: [cluster, namespace]
+    store:
+      ttl: 2s
+      max_items: 200
 processors:
   batch:
     send_batch_size: 10000
@@ -124,17 +136,6 @@ processors:
       - key: service.name
         value: "serviceName"
         action: upsert
-  spanmetrics:
-    metrics_exporter: otlp/spanmetrics
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
-    dimensions_cache_size: 1500
-  servicegraph:
-    metrics_exporter: otlp/spanmetrics
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
-    dimensions: [cluster, namespace]
-    store:
-      ttl: 2s
-      max_items: 200
   metricstransform:
     transforms:
       - include: calls_total
@@ -174,14 +175,10 @@ service:
       exporters: [qryn]
     traces:
       receivers: [otlp, jaeger, zipkin, skywalking]
-      processors: [memory_limiter, resourcedetection/system, resource, spanmetrics, servicegraph, batch]
-      exporters: [qryn]
-    metrics/spanmetrics:
-      receivers: [otlp]
-      processors: [metricstransform]
-      exporters: [qryn]
+      processors: [memory_limiter, resourcedetection/system, resource, batch]
+      exporters: [qryn, spanmetrics, servicegraph]
     metrics:
-      receivers: [prometheus, influxdb]
+      receivers: [prometheus, influxdb, spanmetrics, servicegraph]
       processors: [memory_limiter, resourcedetection/system, resource, batch]
       exporters: [qryn]
 ```

@@ -33,7 +33,7 @@ build:
 
 .PHONY: run
 run:
-	go run cmd/otel-collector/*.go --config ${CONFIG_FILE} --feature-gates=telemetry.useOtelForInternalMetrics
+	go run cmd/otel-collector/*.go --config ${CONFIG_FILE}
 
 .PHONY: fmt
 fmt:
