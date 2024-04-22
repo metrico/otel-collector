@@ -107,18 +107,27 @@ receivers:
   influxdb:
     endpoint: 0.0.0.0:8086
 connectors:
-  spanmetrics:
-    namespace: span.metrics
-    metrics_exporter: otlp/spanmetrics
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
-    dimensions_cache_size: 1500
   servicegraph:
-    metrics_exporter: otlp/spanmetrics
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
-    dimensions: [cluster, namespace]
+    latency_histogram_buckets: [ 100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms ]
+    dimensions: [ cluster, namespace ]
     store:
       ttl: 2s
-      max_items: 200
+      max_items: 1000
+    cache_loop: 2m
+    store_expiration_loop: 2s
+    virtual_node_peer_attributes:
+      - db.name
+      - rpc.service
+  spanmetrics:
+    namespace: span.metrics
+    exemplars:
+      enabled: false
+    dimensions_cache_size: 1000
+    aggregation_temporality: 'AGGREGATION_TEMPORALITY_CUMULATIVE'
+    metrics_flush_interval: 30s
+    metrics_expiration: 5m
+    events:
+      enabled: false
 processors:
   batch:
     send_batch_size: 10000
