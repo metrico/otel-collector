@@ -1,4 +1,4 @@
-# Pyroscope Receiver
+# Clickhouse Statistics Receiver
 
 | Status                   |         |
 | ------------------------ |---------|
