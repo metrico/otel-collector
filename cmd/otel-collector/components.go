@@ -165,6 +165,7 @@ import (
 
 	"github.com/metrico/otel-collector/exporter/clickhouseprofileexporter"
 	"github.com/metrico/otel-collector/exporter/qrynexporter"
+	"github.com/metrico/otel-collector/receiver/chstatsreceiver"
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver"
 )
 
@@ -300,6 +301,7 @@ func components() (otelcol.Factories, error) {
 		zipkinreceiver.NewFactory(),
 		zookeeperreceiver.NewFactory(),
 		pyroscopereceiver.NewFactory(),
+		chstatsreceiver.NewFactory(),
 	}
 	for _, rcv := range factories.Receivers {
 		receivers = append(receivers, rcv)
