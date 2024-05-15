@@ -137,6 +137,6 @@ func (r *chReceiver) Shutdown(_ context.Context) error {
 	fmt.Println("shutting down")
 	r.cancel()
 	r.ticker.Stop()
-	r.db.Close()
+	_ = r.db.Close()
 	return nil
 }
