@@ -35,7 +35,7 @@ SELECT
 ## Example
 
 ```yaml
-eceivers:
+receivers:
   chstatsreceiver:
     dsn: clickhouse://localhost:9000
     queries:
