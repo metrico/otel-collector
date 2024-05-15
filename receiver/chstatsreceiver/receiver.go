@@ -24,7 +24,7 @@ type chReceiver struct {
 	ticker    *time.Ticker
 }
 
-func (r *chReceiver) Start(ctx context.Context, host component.Host) error {
+func (r *chReceiver) Start(ctx context.Context, _ component.Host) error {
 	opts, err := clickhouse.ParseDSN(r.cfg.DSN)
 	if err != nil {
 		return err
@@ -51,13 +51,13 @@ func (r *chReceiver) Start(ctx context.Context, host component.Host) error {
 	return nil
 }
 
-func (r *chReceiver) mainLoop(ctx context.Context) error {
+func (r *chReceiver) mainLoop(ctx context.Context) {
 	for {
 		r.logger.Info("tick start")
 		select {
 		case <-ctx.Done():
 			fmt.Println("tick stop")
-			return nil
+			return
 		case <-r.ticker.C:
 			err := r.GetMetrics(ctx)
 			if err != nil {
@@ -87,7 +87,7 @@ func (r *chReceiver) getMetricsTemplate(ctx context.Context, tpl *template.Templ
 	}
 	err := tpl.Execute(&queryBuf, params)
 	wrapErr := func(err error) error {
-		return fmt.Errorf("failed to execute. Query:%s; error: %w", err)
+		return fmt.Errorf("failed to execute. Query: %s; error: %w", queryBuf.String(), err)
 	}
 	if err != nil {
 		return wrapErr(err)
@@ -133,7 +133,7 @@ func (r *chReceiver) getMetricsTemplate(ctx context.Context, tpl *template.Templ
 	return nil
 }
 
-func (r *chReceiver) Shutdown(ctx context.Context) error {
+func (r *chReceiver) Shutdown(_ context.Context) error {
 	fmt.Println("shutting down")
 	r.cancel()
 	r.ticker.Stop()
