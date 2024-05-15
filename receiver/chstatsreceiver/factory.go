@@ -2,10 +2,11 @@ package chstatsreceiver
 
 import (
 	"context"
+	"time"
+
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/receiver"
-	"time"
 )
 
 const (
