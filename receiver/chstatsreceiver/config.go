@@ -2,9 +2,10 @@ package chstatsreceiver
 
 import (
 	"fmt"
-	"go.opentelemetry.io/collector/component"
 	"net/url"
 	"time"
+
+	"go.opentelemetry.io/collector/component"
 )
 
 // Represents the receiver config within the collector's config.yaml
