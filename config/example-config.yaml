@@ -23,34 +23,44 @@ processors:
     detectors: ['system']
     system:
       hostname_sources: ['os']
-  spanmetrics:
-    metrics_exporter: 'otlp'
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
-    dimensions_cache_size: 1500
-    dimensions:
-      - name: http.method
-        default: GET
-      - name: http.status_code
-      - name: span.name
+
+connectors:
   servicegraph:
-    metrics_exporter: 'otlp'
     latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
     dimensions: [cluster, namespace]
     store:
       ttl: 2s
-      max_items: 200
-  metricstransform:
-    transforms:
-      - include: calls_total
-        action: update
-        new_name: traces_spanmetrics_calls_total
-        operations:
-          - action: update_label
-            label: operation
-            new_label: span.name
-      - include: latency
-        action: update
-        new_name: traces_spanmetrics_latency
+      max_items: 1000
+    cache_loop: 2m
+    store_expiration_loop: 2s
+    virtual_node_peer_attributes:
+     - db.name
+     - rpc.service
+  spanmetrics:
+    namespace: span.metrics
+    dimensions:
+      - name: exchange
+      - name: k8s.namespace.name
+      - name: queue
+      - name: k8s.cluster.name
+      - name: host.name
+      - name: trace.root
+      - name: db.system
+      - name: db.name
+      - name: db.type
+      - name: db.addr
+      - name: db.method
+      - name: net.peer.ip
+      - name: k8s.pod.name
+      - name: http.response.status_code
+    exemplars:
+      enabled: false
+    dimensions_cache_size: 1000
+    aggregation_temporality: 'AGGREGATION_TEMPORALITY_CUMULATIVE'
+    metrics_flush_interval: 30s
+    metrics_expiration: 5m
+    events:
+      enabled: false
 
 exporters:
   qryn:
@@ -84,8 +94,6 @@ extensions:
     mutex_profile_fraction: 100
     block_profile_fraction: 100
   zpages:
-  memory_ballast:
-    size_mib: 1000
 service:
   telemetry:
     metrics:
@@ -104,17 +112,10 @@ service:
       exporters: [clickhouseprofileexporter]
     traces:
       receivers: [otlp]
-      processors: [resourcedetection/system, spanmetrics, batch]
-      exporters: [qryn]
-    traces/servicegraph:
-      receivers: [otlp]
-      processors: [servicegraph]
-      exporters: [otlp]
-    metrics/spanmetrics:
-      receivers: [otlp/dummy]
-      exporters: [otlp]
+      processors: [resourcedetection/system, batch]
+      exporters: [qryn, spanmetrics, servicegraph]
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, spanmetrics, servicegraph]
       processors:
-        [memory_limiter, resourcedetection/system, metricstransform, batch]
+        [memory_limiter, resourcedetection/system, batch]
       exporters: [qryn]

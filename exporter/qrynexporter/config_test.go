@@ -27,11 +27,11 @@ func TestLoadConfig(t *testing.T) {
 		expected component.Config
 	}{
 		{
-			id:       component.NewIDWithName(typeStr, ""),
+			id:       component.NewIDWithName(component.MustNewType(typeStr), ""),
 			expected: defaultCfg,
 		},
 		{
-			id: component.NewIDWithName(typeStr, "full"),
+			id: component.NewIDWithName(component.MustNewType(typeStr), "full"),
 			expected: &Config{
 				DSN: defaultDSN,
 				TimeoutSettings: exporterhelper.TimeoutSettings{

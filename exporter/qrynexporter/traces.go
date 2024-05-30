@@ -243,11 +243,17 @@ func extractServiceName(tags map[string]string) string {
 	return serviceName
 }
 
-func mergeAttributes(span ptrace.Span, resource pcommon.Resource) {
+func mergeAttributes(span ptrace.Span, resource pcommon.Resource) pcommon.Map {
+	newAttributes := pcommon.NewMap()
 	resource.Attributes().Range(func(k string, v pcommon.Value) bool {
-		span.Attributes().PutStr(k, v.AsString())
+		newAttributes.PutStr(k, v.AsString())
 		return true
 	})
+	span.Attributes().Range(func(k string, v pcommon.Value) bool {
+		newAttributes.PutStr(k, v.AsString())
+		return true
+	})
+	return newAttributes
 }
 
 func sliceToArray(vs pcommon.Slice) []*commonv1.AnyValue {
@@ -329,7 +335,7 @@ func spanEventSliceToSpanEvents(spanEvents ptrace.SpanEventSlice) []*tracev1.Spa
 	return events
 }
 
-func marshalSpanToJSON(span ptrace.Span) ([]byte, error) {
+func marshalSpanToJSON(span ptrace.Span, mergedAttributes pcommon.Map) ([]byte, error) {
 	traceID := span.TraceID()
 	spanID := span.SpanID()
 	parentSpanID := span.ParentSpanID()
@@ -342,7 +348,7 @@ func marshalSpanToJSON(span ptrace.Span) ([]byte, error) {
 		Kind:                   tracev1.Span_SpanKind(span.Kind()),
 		StartTimeUnixNano:      uint64(span.StartTimestamp()),
 		EndTimeUnixNano:        uint64(span.EndTimestamp()),
-		Attributes:             mapToKeyValueList(span.Attributes()),
+		Attributes:             mapToKeyValueList(mergedAttributes),
 		DroppedAttributesCount: span.DroppedAttributesCount(),
 		Events:                 spanEventSliceToSpanEvents(span.Events()),
 		DroppedEventsCount:     span.DroppedEventsCount(),
@@ -357,7 +363,6 @@ func marshalSpanToJSON(span ptrace.Span) ([]byte, error) {
 }
 
 func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName string, tags map[string]string) (*Trace, error) {
-	mergeAttributes(span, resource)
 	durationNano := uint64(span.EndTimestamp() - span.StartTimestamp())
 	tags = aggregateSpanTags(span, tags)
 	tags["service.name"] = serviceName
@@ -369,7 +374,7 @@ func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName
 	for k, v := range tags {
 		mTags = append(mTags, []string{k, v})
 	}
-	payload, err := marshalSpanToJSON(span)
+	payload, err := marshalSpanToJSON(span, mergeAttributes(span, resource))
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal span: %w", err)
 	}

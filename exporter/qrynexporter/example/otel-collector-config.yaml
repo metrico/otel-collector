@@ -11,6 +11,23 @@ receivers:
       grpc:
         endpoint: 'localhost:12345'
 
+connectors:
+  servicegraph:
+    metrics_exporter: 'otlp'
+    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
+    dimensions: [cluster, namespace]
+    store:
+      ttl: 2s
+      max_items: 200
+  spanmetrics:
+    namespace: span.metrics
+    metrics_exporter: 'otlp'
+    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
+    dimensions_cache_size: 1500
+    dimensions:
+      - name: http.method
+        default: GET
+      - name: http.status_code
 processors:
   batch:
     send_batch_size: 1000
@@ -23,21 +40,6 @@ processors:
     detectors: ['system']
     system:
       hostname_sources: ['os']
-  spanmetrics:
-    metrics_exporter: 'otlp'
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
-    dimensions_cache_size: 1500
-    dimensions:
-      - name: http.method
-        default: GET
-      - name: http.status_code
-  servicegraph:
-    metrics_exporter: 'otlp'
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
-    dimensions: [cluster, namespace]
-    store:
-      ttl: 2s
-      max_items: 200
   metricstransform:
     transforms:
       - include: calls_total
@@ -73,8 +75,6 @@ extensions:
   health_check:
   pprof:
   zpages:
-  memory_ballast:
-    size_mib: 1000
 
 service:
   extensions: [pprof, zpages, health_check]
@@ -85,17 +85,10 @@ service:
       exporters: [qryn]
     traces:
       receivers: [otlp]
-      processors: [resourcedetection/system, spanmetrics, batch]
-      exporters: [qryn]
-    traces/servicegraph:
-      receivers: [otlp]
-      processors: [servicegraph]
-      exporters: [otlp]
-    metrics/spanmetrics:
-      receivers: [otlp/dummy]
-      exporters: [otlp]
+      processors: [resourcedetection/system, batch]
+      exporters: [qryn, spanmetrics, servicegraph]
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, servicegraph, spanmetrics]
       processors:
         [memory_limiter, resourcedetection/system, metricstransform, batch]
       exporters: [qryn]
