@@ -22,7 +22,7 @@ const (
 func createDefaultConfig() component.Config {
 	return &Config{
 		Protocols: Protocols{
-			Http: &confighttp.ServerConfig{
+			HTTP: &confighttp.ServerConfig{
 				Endpoint:           defaultHttpAddr,
 				MaxRequestBodySize: defaultMaxRequestBodySize,
 			},

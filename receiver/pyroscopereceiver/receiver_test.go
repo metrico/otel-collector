@@ -65,7 +65,7 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 	addr := getAvailableLocalTcpPort(t)
 	cfg := &Config{
 		Protocols: Protocols{
-			Http: &confighttp.ServerConfig{
+			HTTP: &confighttp.ServerConfig{
 				Endpoint:           addr,
 				MaxRequestBodySize: defaultMaxRequestBodySize,
 			},
@@ -137,30 +137,31 @@ func TestPyroscopeIngestJfrMemory(t *testing.T) {
 			"format": "jfr",
 		},
 		filename: filepath.Join("testdata", "memory_alloc_live_example.jfr"),
-		expected: gen([]profileLog{{
-			timestamp: 1700332322000000000,
-			attrs: map[string]any{
-				"service_name": "com.example.App",
-				"tags": map[string]any{
-					"dc":                  "us-east-1",
-					"kubernetes_pod_name": "app-abcd1234",
+		expected: gen([]profileLog{
+			{
+				timestamp: 1700332322000000000,
+				attrs: map[string]any{
+					"service_name": "com.example.App",
+					"tags": map[string]any{
+						"dc":                  "us-east-1",
+						"kubernetes_pod_name": "app-abcd1234",
+					},
+					"duration_ns":  "7000000000",
+					"type":         "memory",
+					"period_type":  "space",
+					"period_unit":  "bytes",
+					"payload_type": "0",
+					"sample_types": []any{"alloc_in_new_tlab_objects", "alloc_in_new_tlab_bytes"},
+					"sample_units": []any{"count", "bytes"},
+					"values_agg": []any{
+						[]any{"alloc_in_new_tlab_objects:count", 977, 471},
+						[]any{"alloc_in_new_tlab_bytes:bytes", 512229376, 471},
+					},
+					"tree":      "16287638610851960464",
+					"functions": "14254943256614951927",
 				},
-				"duration_ns":  "7000000000",
-				"type":         "memory",
-				"period_type":  "space",
-				"period_unit":  "bytes",
-				"payload_type": "0",
-				"sample_types": []any{"alloc_in_new_tlab_objects", "alloc_in_new_tlab_bytes"},
-				"sample_units": []any{"count", "bytes"},
-				"values_agg": []any{
-					[]any{"alloc_in_new_tlab_objects:count", 977, 471},
-					[]any{"alloc_in_new_tlab_bytes:bytes", 512229376, 471},
-				},
-				"tree":      "16287638610851960464",
-				"functions": "14254943256614951927",
+				body: pbAllocInNewTlab,
 			},
-			body: pbAllocInNewTlab,
-		},
 			{
 				timestamp: 1700332322000000000,
 				attrs: map[string]any{

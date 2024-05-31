@@ -10,8 +10,8 @@ import (
 
 // Configures supported protocols
 type Protocols struct {
-	// Http.MaxRequestBodySize configures max uncompressed body size in bytes
-	Http *confighttp.ServerConfig `mapstructure:"http"`
+	// HTTP.MaxRequestBodySize configures max uncompressed body size in bytes
+	HTTP *confighttp.ServerConfig `mapstructure:"http"`
 }
 
 // Represents the receiver config within the collector's config.yaml
@@ -29,7 +29,7 @@ func (cfg *Config) Validate() error {
 	if cfg.Timeout <= 0 {
 		return fmt.Errorf("timeout must be positive")
 	}
-	if cfg.Protocols.Http.MaxRequestBodySize < 1 {
+	if cfg.Protocols.HTTP.MaxRequestBodySize < 1 {
 		return fmt.Errorf("max_request_body_size must be positive")
 	}
 	return nil
