@@ -392,7 +392,6 @@ func (r *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request,
 		} else {
 			timestampNs = pm.start
 			durationNs = pm.end - pm.start
-			durationNs = ns(durationNs)
 		}
 		record.SetTimestamp(pcommon.Timestamp(timestampNs))
 		m := record.Attributes()
