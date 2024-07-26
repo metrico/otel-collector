@@ -821,6 +821,8 @@ github.com/influxdata/influxdb-observability/common v0.5.8 h1:nyk4dqnKbPGIyr1vAs
 github.com/influxdata/influxdb-observability/common v0.5.8/go.mod h1:aG8A2gbtXbl/P2FePd6QNsCUSOkcvz1n+NL5dJLUO1s=
 github.com/influxdata/influxdb-observability/influx2otel v0.5.8 h1:pHkeImZksXNNQbbH/w1qPuC/u6e7cK3kTG12otQHDuE=
 github.com/influxdata/influxdb-observability/influx2otel v0.5.8/go.mod h1:HorkmvvgiPhWNcgn3xJw7i1kRkVWKMLu+zsf993UAws=
+github.com/influxdata/influxdb-observability/otel2influx v0.5.8 h1:vZQ/WwiqIYPcZ3l52ySRBCM2EBJY2yExDldVLIJfnvE=
+github.com/influxdata/influxdb-observability/otel2influx v0.5.8/go.mod h1:tcg//mjCGBsN0hAPQhUBNWuGF2miPPEMJEBl0ZIAfCk=
 github.com/influxdata/influxdb1-client v0.0.0-20220302092344-a9ab5670611c h1:qSHzRbhzK8RdXOsAdfDgO49TtqC1oZ+acxPrkfTxcCs=
 github.com/influxdata/influxdb1-client v0.0.0-20220302092344-a9ab5670611c/go.mod h1:qj24IKcXYK6Iy9ceXlo3Tc+vtHo9lIhSX5JddghvEPo=
 github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 h1:W9WBk7wlPfJLvMCdtV4zPulc4uCPrlywQOmbFOhgQNU=
@@ -1130,10 +1132,14 @@ github.com/open-telemetry/opentelemetry-collector-contrib/exporter/datadogexport
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/datadogexporter v0.98.0/go.mod h1:NOc8sJP2zWgG/ARCUX0rj62Tp9fjh7rBe3f7+S6wJKE=
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.98.0 h1:eD48RXTOTI4mUqwmMbifd2xygNPFQk2+Q+h79tMKgRo=
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.98.0/go.mod h1:iUXj76MTvLxgCJX6MU5d44bDSJJDkhZyKWTgSqt3DQw=
+github.com/open-telemetry/opentelemetry-collector-contrib/exporter/influxdbexporter v0.98.0 h1:Ox0TR2Rn81gutbf3NuC0iGytHW+p90+WSgjVRxA75Gk=
+github.com/open-telemetry/opentelemetry-collector-contrib/exporter/influxdbexporter v0.98.0/go.mod h1:8abc82jJHH8NezzPJAnNopRiTKKsyPfmqhpZ6YrlRvM=
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/kafkaexporter v0.98.0 h1:qqbNZig9IqIed6mj9FUJVWabiP+mxY09vF+aW/hX2cU=
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/kafkaexporter v0.98.0/go.mod h1:hYMt6wWecJJF60oWxRvXgA2LU207PwhMEvVg+/yxBvE=
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/loadbalancingexporter v0.98.0 h1:r2hKk2PEwWpQ4upx75jvR0nNbMkMO+EYpL2mByPgV0A=
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/loadbalancingexporter v0.98.0/go.mod h1:ziO8zfvZyuWHsvf6FfeB7XWnC85t0cYPfjGHdITPoZU=
+github.com/open-telemetry/opentelemetry-collector-contrib/exporter/lokiexporter v0.98.0 h1:zPVW/IYGd6JqmSLJivtOZ8yCJqyrUu6Z8PY29CMCDZo=
+github.com/open-telemetry/opentelemetry-collector-contrib/exporter/lokiexporter v0.98.0/go.mod h1:NI7SqAyQddiztNI9M0yRxL2svcELWTzJnfMTAQQaO8o=
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/opencensusexporter v0.98.0 h1:mMLbJtMYgRYY3WLgzKbPTunGvA/RXoKTmCyLLewDJmA=
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/opencensusexporter v0.98.0/go.mod h1:VzFgd+rhse542Ny7DCWeXQHp/+9LBNdEG7ELVLJv5J4=
 github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter v0.98.0 h1:9iGIQX91RY84Ubv3AoLxnKPINlbBBEIwkbWWBudR2FA=
