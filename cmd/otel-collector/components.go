@@ -9,8 +9,10 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/connector/spanmetricsconnector"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/carbonexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/influxdbexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/kafkaexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/loadbalancingexporter"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/lokiexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/opencensusexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusremotewriteexporter"
@@ -320,6 +322,8 @@ func components() (otelcol.Factories, error) {
 		prometheusexporter.NewFactory(),
 		prometheusremotewriteexporter.NewFactory(),
 		zipkinexporter.NewFactory(),
+		influxdbexporter.NewFactory(),
+		lokiexporter.NewFactory(),
 	}
 	for _, exp := range factories.Exporters {
 		exporters = append(exporters, exp)

@@ -20,8 +20,10 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/connector/spanmetricsconnector v0.98.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/carbonexporter v0.98.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.98.0
+	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/influxdbexporter v0.98.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/kafkaexporter v0.98.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/loadbalancingexporter v0.98.0
+	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/lokiexporter v0.98.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/opencensusexporter v0.98.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter v0.98.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusremotewriteexporter v0.98.0
@@ -401,6 +403,7 @@ require (
 	github.com/influxdata/go-syslog/v3 v3.0.1-0.20230911200830-875f5bc594a4 // indirect
 	github.com/influxdata/influxdb-observability/common v0.5.8 // indirect
 	github.com/influxdata/influxdb-observability/influx2otel v0.5.8 // indirect
+	github.com/influxdata/influxdb-observability/otel2influx v0.5.8 // indirect
 	github.com/influxdata/line-protocol/v2 v2.2.1 // indirect
 	github.com/ionos-cloud/sdk-go/v6 v6.1.11 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
