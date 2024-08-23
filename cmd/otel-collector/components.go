@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/metrico/otel-collector/extension/pyroscope"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/connector/countconnector"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/connector/datadogconnector"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/connector/exceptionsconnector"
@@ -204,6 +205,7 @@ func components() (otelcol.Factories, error) {
 		jsonlogencodingextension.NewFactory(),
 		textencodingextension.NewFactory(),
 		zipkinencodingextension.NewFactory(),
+		pyroscope.NewFactory(),
 	}
 	for _, ext := range factories.Extensions {
 		extensions = append(extensions, ext)

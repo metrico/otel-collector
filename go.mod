@@ -9,8 +9,10 @@ require (
 	github.com/go-faster/city v1.0.1
 	github.com/go-logfmt/logfmt v0.6.0
 	github.com/google/pprof v0.0.0-20240320155624-b11c3daa6f07
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/grafana/jfr-parser v0.8.0
+	github.com/grafana/pyroscope-go v1.1.2
 	github.com/grafana/pyroscope/api v0.4.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/connector/countconnector v0.98.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/connector/datadogconnector v0.98.0
@@ -369,13 +371,13 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.3 // indirect
 	github.com/gophercloud/gophercloud v1.8.0 // indirect
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/gosnmp/gosnmp v1.37.0 // indirect
 	github.com/grafana/loki/pkg/push v0.0.0-20231127162423-bd505f8e2d37 // indirect
+	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd // indirect
 	github.com/grobie/gomemcache v0.0.0-20230213081705-239240bbc445 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.19.1 // indirect
