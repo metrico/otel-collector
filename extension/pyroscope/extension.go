@@ -5,6 +5,7 @@ package pyroscope
 
 import (
 	"context"
+
 	"github.com/google/uuid"
 	"github.com/grafana/pyroscope-go"
 	"go.opentelemetry.io/collector/component"
