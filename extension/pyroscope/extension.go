@@ -15,9 +15,9 @@ import (
 
 var pyroscopeType = component.MustNewType("pyroscope")
 
-// NewNopCreateSettings returns a new nop settings for extension.Factory Create* functions.
-func NewPyroscopeCreateSettings() extension.CreateSettings {
-	return extension.CreateSettings{
+// NewNopSettings returns a new nop settings for extension.Factory Create* functions.
+func NewPyroscopeCreateSettings() extension.Settings {
+	return extension.Settings{
 		ID:                component.NewIDWithName(pyroscopeType, uuid.NewString()),
 		TelemetrySettings: componenttest.NewNopTelemetrySettings(),
 		BuildInfo:         component.NewDefaultBuildInfo(),
@@ -29,7 +29,7 @@ func NewFactory() extension.Factory {
 	return extension.NewFactory(
 		pyroscopeType,
 		defaultConfig,
-		func(ctx context.Context, settings extension.CreateSettings, config component.Config) (extension.Extension, error) {
+		func(ctx context.Context, settings extension.Settings, config component.Config) (extension.Extension, error) {
 			return &PyroscopeExtension{
 				config: config.(*Config),
 			}, nil
@@ -39,7 +39,7 @@ func NewFactory() extension.Factory {
 
 type PyroscopeExtension struct {
 	config   *Config
-	settings extension.CreateSettings
+	settings extension.Settings
 	ctx      context.Context
 	profiler *pyroscope.Profiler
 }

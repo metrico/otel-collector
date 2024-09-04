@@ -42,7 +42,7 @@ type logsExporter struct {
 	cluster         bool
 }
 
-func newLogsExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSettings) (*logsExporter, error) {
+func newLogsExporter(logger *zap.Logger, cfg *Config, set *exporter.Settings) (*logsExporter, error) {
 	opts, err := clickhouse.ParseDSN(cfg.DSN)
 	if err != nil {
 		return nil, err

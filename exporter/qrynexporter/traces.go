@@ -53,7 +53,7 @@ type tracesExporter struct {
 }
 
 // newTracesExporter returns a SpanWriter for the database
-func newTracesExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSettings) (*tracesExporter, error) {
+func newTracesExporter(logger *zap.Logger, cfg *Config, set *exporter.Settings) (*tracesExporter, error) {
 	opts, err := clickhouse.ParseDSN(cfg.DSN)
 	if err != nil {
 		return nil, err

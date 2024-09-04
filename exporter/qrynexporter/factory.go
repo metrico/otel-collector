@@ -52,7 +52,7 @@ func createDefaultConfig() component.Config {
 // Traces are directly insert into clickhouse.
 func createTracesExporter(
 	ctx context.Context,
-	set exporter.CreateSettings,
+	set exporter.Settings,
 	cfg component.Config,
 ) (exporter.Traces, error) {
 	c := cfg.(*Config)
@@ -77,7 +77,7 @@ func createTracesExporter(
 // Logs are directly insert into clickhouse.
 func createLogsExporter(
 	ctx context.Context,
-	set exporter.CreateSettings,
+	set exporter.Settings,
 	cfg component.Config,
 ) (exporter.Logs, error) {
 	c := cfg.(*Config)
@@ -102,7 +102,7 @@ func createLogsExporter(
 // Metrics are directly insert into clickhouse.
 func createMetricsExporter(
 	ctx context.Context,
-	set exporter.CreateSettings,
+	set exporter.Settings,
 	cfg component.Config,
 ) (exporter.Metrics, error) {
 	c := cfg.(*Config)

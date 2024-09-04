@@ -21,7 +21,7 @@ const (
 
 type clickhouseProfileExporter struct {
 	cfg    *Config
-	set    *exporter.CreateSettings
+	set    *exporter.Settings
 	logger *zap.Logger
 	meter  metric.Meter
 
@@ -37,7 +37,7 @@ type clickhouseAccess interface {
 }
 
 // TODO: batch like this https://github.com/open-telemetry/opentelemetry-collector/issues/8122
-func newClickhouseProfileExporter(ctx context.Context, set *exporter.CreateSettings, cfg *Config) (*clickhouseProfileExporter, error) {
+func newClickhouseProfileExporter(ctx context.Context, set *exporter.Settings, cfg *Config) (*clickhouseProfileExporter, error) {
 	exp := &clickhouseProfileExporter{
 		cfg:    cfg,
 		set:    set,
