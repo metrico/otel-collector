@@ -358,7 +358,7 @@ func (r *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request,
 		return logs, fmt.Errorf("failed to decompress body: %w", err)
 	}
 	// TODO: try measure compressed size
-	otelcolReceiverPyroscopeRequestBodyUncompressedSizeBytes.Record(ctx, int64(buf.Len()), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatJfr, "")))
+	otelcolReceiverPyroscopeRequestBodyUncompressedSizeBytes.Record(ctx, int64(buf.Len()), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(formatJfr, "")))
 	resetHeaders(req)
 
 	md := profile_types.Metadata{SampleRateHertz: 0}
@@ -422,7 +422,7 @@ func (r *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request,
 		)
 	}
 	// sz may be 0 and it will be recorded
-	otelcolReceiverPyroscopeParsedBodyUncompressedSizeBytes.Record(ctx, int64(sz), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(pm.name, formatPprof, "")))
+	otelcolReceiverPyroscopeParsedBodyUncompressedSizeBytes.Record(ctx, int64(sz), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(formatPprof, "")))
 	return logs, nil
 }
 
@@ -430,8 +430,8 @@ func ns(sec uint64) uint64 {
 	return sec * 1e9
 }
 
-func newOtelcolAttrSetPayloadSizeBytes(service string, typ string, encoding string) *attribute.Set {
-	s := attribute.NewSet(attribute.KeyValue{Key: keyService, Value: attribute.StringValue(service)}, attribute.KeyValue{Key: "type", Value: attribute.StringValue(typ)}, attribute.KeyValue{Key: "encoding", Value: attribute.StringValue(encoding)})
+func newOtelcolAttrSetPayloadSizeBytes(typ string, encoding string) *attribute.Set {
+	s := attribute.NewSet(attribute.KeyValue{Key: "type", Value: attribute.StringValue(typ)}, attribute.KeyValue{Key: "encoding", Value: attribute.StringValue(encoding)})
 	return &s
 }
 
