@@ -31,7 +31,7 @@ func createDefaultConfig() component.Config {
 	}
 }
 
-func createLogsReceiver(_ context.Context, set receiver.CreateSettings, cfg component.Config, consumer consumer.Logs) (receiver.Logs, error) {
+func createLogsReceiver(_ context.Context, set receiver.Settings, cfg component.Config, consumer consumer.Logs) (receiver.Logs, error) {
 	if nil == consumer {
 		return nil, errors.New("nil next Consumer")
 	}
