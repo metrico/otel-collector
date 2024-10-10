@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -117,7 +118,7 @@ func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.Set
 	r.mux.HandleFunc(ingestPath, func(resp http.ResponseWriter, req *http.Request) {
 		r.httpHandlerIngest(resp, req)
 	})
-	if err := initMetrics(r.meter); err != nil {
+	if err := initMetrics(r.meter, cfg); err != nil {
 		r.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
 		return r, err
 	}
@@ -176,15 +177,23 @@ func (r *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWriter
 			r.handleError(ctx, resp, "text/plain", http.StatusInternalServerError, err.Error(), pm.name, errorCodeError)
 			return
 		}
-
-		otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(pm.name, errorCodeSuccess, http.StatusNoContent)))
+		if otelcolReceiverPyroscopeHttpRequestTotal != nil {
+			otelcolReceiverPyroscopeHttpRequestTotal.Add(
+				ctx, 1,
+				metric.WithAttributeSet(*r.newOtelcolAttrSetHttp(pm.name, errorCodeSuccess, http.StatusNoContent)),
+			)
+		}
 		writeResponseNoContent(resp)
 	}()
 	return c
 }
 
 func (recv *pyroscopeReceiver) handleError(ctx context.Context, resp http.ResponseWriter, contentType string, statusCode int, msg string, service string, errorCode string) {
-	otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1, metric.WithAttributeSet(*newOtelcolAttrSetHttp(service, errorCode, statusCode)))
+	if otelcolReceiverPyroscopeHttpRequestTotal != nil {
+		otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1,
+			metric.WithAttributeSet(*recv.newOtelcolAttrSetHttp(service, errorCode, statusCode)))
+	}
+
 	recv.logger.Error(msg)
 	writeResponse(resp, "text/plain", statusCode, []byte(msg))
 }
@@ -240,12 +249,19 @@ func readParams(qs *url.Values) (params, error) {
 	return p, nil
 }
 
-func newOtelcolAttrSetHttp(service string, errorCode string, statusCode int) *attribute.Set {
-	s := attribute.NewSet(
-		attribute.KeyValue{Key: keyService, Value: attribute.StringValue(service)},
-		attribute.KeyValue{Key: "error_code", Value: attribute.StringValue(errorCode)},
-		attribute.KeyValue{Key: "status_code", Value: attribute.IntValue(statusCode)},
-	)
+func (r *pyroscopeReceiver) newOtelcolAttrSetHttp(service string, errorCode string, statusCode int) *attribute.Set {
+	keyValues := []attribute.KeyValue{
+		{Key: keyService, Value: attribute.StringValue(service)},
+		{Key: "error_code", Value: attribute.StringValue(errorCode)},
+		{Key: "status_code", Value: attribute.IntValue(statusCode)},
+	}
+	for i := len(keyValues) - 1; i >= 0; i-- {
+		if slices.Contains(r.cfg.Metrics.ExcludeLabels, string(keyValues[i].Key)) {
+			keyValues[i] = keyValues[len(keyValues)-1]
+			keyValues = keyValues[:len(keyValues)-1]
+		}
+	}
+	s := attribute.NewSet(keyValues...)
 	return &s
 }
 
@@ -334,7 +350,9 @@ func (r *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request,
 
 	r.logger.Debug("received profiles", zap.String("url_query", req.URL.RawQuery))
 	qs := req.URL.Query()
+	format := formatPprof
 	if tmp, ok = qs["format"]; ok && (tmp[0] == "jfr") {
+		format = formatJfr
 		p = jfrparser.NewJfrPprofParser()
 	} else if tmp, ok = qs["spyName"]; ok && (tmp[0] == "nodespy") {
 		p = nodeparser.NewNodePprofParser()
@@ -358,7 +376,11 @@ func (r *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request,
 		return logs, fmt.Errorf("failed to decompress body: %w", err)
 	}
 	// TODO: try measure compressed size
-	otelcolReceiverPyroscopeRequestBodyUncompressedSizeBytes.Record(ctx, int64(buf.Len()), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(formatJfr, "")))
+	if otelcolReceiverPyroscopeRequestBodyUncompressedSizeBytes != nil {
+		otelcolReceiverPyroscopeRequestBodyUncompressedSizeBytes.Record(ctx, int64(buf.Len()),
+			metric.WithAttributeSet(*r.newOtelcolAttrSetPayloadSizeBytes(pm.name, format, "")))
+	}
+
 	resetHeaders(req)
 
 	md := profile_types.Metadata{SampleRateHertz: 0}
@@ -421,7 +443,11 @@ func (r *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request,
 		)
 	}
 	// sz may be 0 and it will be recorded
-	otelcolReceiverPyroscopeParsedBodyUncompressedSizeBytes.Record(ctx, int64(sz), metric.WithAttributeSet(*newOtelcolAttrSetPayloadSizeBytes(formatPprof, "")))
+	if otelcolReceiverPyroscopeParsedBodyUncompressedSizeBytes != nil {
+		otelcolReceiverPyroscopeParsedBodyUncompressedSizeBytes.Record(ctx, int64(sz),
+			metric.WithAttributeSet(*r.newOtelcolAttrSetPayloadSizeBytes(pm.name, formatPprof, "")))
+	}
+
 	return logs, nil
 }
 
@@ -429,8 +455,20 @@ func ns(sec uint64) uint64 {
 	return sec * 1e9
 }
 
-func newOtelcolAttrSetPayloadSizeBytes(typ string, encoding string) *attribute.Set {
-	s := attribute.NewSet(attribute.KeyValue{Key: "type", Value: attribute.StringValue(typ)}, attribute.KeyValue{Key: "encoding", Value: attribute.StringValue(encoding)})
+func (r *pyroscopeReceiver) newOtelcolAttrSetPayloadSizeBytes(service string, typ string,
+	encoding string) *attribute.Set {
+	keyValues := []attribute.KeyValue{
+		{Key: keyService, Value: attribute.StringValue(service)},
+		{Key: "type", Value: attribute.StringValue(typ)},
+		{Key: "encoding", Value: attribute.StringValue(encoding)},
+	}
+	for i := len(keyValues) - 1; i >= 0; i-- {
+		if slices.Contains(r.cfg.Metrics.ExcludeLabels, string(keyValues[i].Key)) {
+			keyValues[i] = keyValues[len(keyValues)-1]
+			keyValues = keyValues[:len(keyValues)-1]
+		}
+	}
+	s := attribute.NewSet(keyValues...)
 	return &s
 }
 
