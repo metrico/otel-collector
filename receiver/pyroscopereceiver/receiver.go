@@ -75,7 +75,7 @@ type ctxkey string
 
 type pyroscopeReceiver struct {
 	cfg     *Config
-	setting *receiver.CreateSettings
+	setting *receiver.Settings
 	logger  *zap.Logger
 	meter   metric.Meter
 	next    consumer.Logs
@@ -103,7 +103,7 @@ type params struct {
 	labels labels.Labels
 }
 
-func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.CreateSettings) (*pyroscopeReceiver, error) {
+func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.Settings) (*pyroscopeReceiver, error) {
 	r := &pyroscopeReceiver{
 		cfg:                 cfg,
 		setting:             set,
@@ -527,12 +527,12 @@ func (r *pyroscopeReceiver) Start(ctx context.Context, host component.Host) erro
 
 	if r.cfg.Protocols.HTTP.Endpoint != "" {
 		// applies an interceptor that enforces the configured request body limit
-		if r.httpServer, err = r.cfg.Protocols.HTTP.ToServerContext(ctx, host, r.setting.TelemetrySettings, r.mux); err != nil {
+		if r.httpServer, err = r.cfg.Protocols.HTTP.ToServer(ctx, host, r.setting.TelemetrySettings, r.mux); err != nil {
 			return fmt.Errorf("failed to create http server: %w", err)
 		}
 
 		var l net.Listener
-		if l, err = r.cfg.Protocols.HTTP.ToListenerContext(ctx); err != nil {
+		if l, err = r.cfg.Protocols.HTTP.ToListener(ctx); err != nil {
 			return fmt.Errorf("failed to create tcp listener: %w", err)
 		}
 		pushv1connect.RegisterPusherServiceHandler(r.mux, r)

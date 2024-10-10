@@ -22,7 +22,7 @@ func createDefaultConfig() component.Config {
 	}
 }
 
-func createMetricsReceiver(_ context.Context, set receiver.CreateSettings, cfg component.Config, consumer consumer.Metrics) (receiver.Metrics, error) {
+func createMetricsReceiver(_ context.Context, set receiver.Settings, cfg component.Config, consumer consumer.Metrics) (receiver.Metrics, error) {
 	return &chReceiver{
 		cfg:      cfg.(*Config),
 		logger:   set.Logger,

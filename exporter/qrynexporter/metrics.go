@@ -38,7 +38,7 @@ type metricsExporter struct {
 	cluster   bool
 }
 
-func newMetricsExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSettings) (*metricsExporter, error) {
+func newMetricsExporter(logger *zap.Logger, cfg *Config, set *exporter.Settings) (*metricsExporter, error) {
 	opts, err := clickhouse.ParseDSN(cfg.DSN)
 	if err != nil {
 		return nil, err

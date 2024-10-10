@@ -73,7 +73,7 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 		Timeout: defaultTimeout,
 	}
 	sink := new(consumertest.LogsSink)
-	set := receivertest.NewNopCreateSettings()
+	set := receivertest.NewNopSettings()
 	set.Logger = zap.Must(zap.NewDevelopment())
 	recv, err := newPyroscopeReceiver(cfg, sink, &set)
 	require.NoError(t, err)

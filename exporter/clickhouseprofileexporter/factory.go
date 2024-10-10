@@ -25,7 +25,7 @@ func createDefaultConfig() component.Config {
 	}
 }
 
-func createLogsExporter(ctx context.Context, set exporter.CreateSettings, cfg component.Config) (exporter.Logs, error) {
+func createLogsExporter(ctx context.Context, set exporter.Settings, cfg component.Config) (exporter.Logs, error) {
 	c := cfg.(*Config)
 	exp, err := newClickhouseProfileExporter(ctx, &set, cfg.(*Config))
 	if err != nil {
