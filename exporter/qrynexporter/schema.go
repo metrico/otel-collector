@@ -21,7 +21,11 @@ import (
 
 var (
 	tracesInputSQL = func(clustered bool) string {
-		return `INSERT INTO traces_input (
+		dist := ""
+		if clustered {
+			dist = "_dist"
+		}
+		return fmt.Sprintf(`INSERT INTO traces_input%s (
   trace_id, 
   span_id, 
   parent_id, 
@@ -31,7 +35,7 @@ var (
   service_name,
   payload_type, 
   payload, 
-  tags)`
+  tags)`, dist)
 	}
 	samplesSQL = func(clustered bool) string {
 		dist := ""
