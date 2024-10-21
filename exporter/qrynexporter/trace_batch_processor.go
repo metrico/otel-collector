@@ -3,60 +3,61 @@ package qrynexporter
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"time"
+
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
 
-type batchV2 struct {
+type traceWithTagsBatch struct {
 	driver.Batch
-	subBatch driver.Batch
+	tagsBatch driver.Batch
 }
 
-func (b *batchV2) AppendStruct(data any) error {
-	_data, ok := data.(*Trace)
+func (b *traceWithTagsBatch) AppendStruct(v any) error {
+	ti, ok := v.(*TraceInput)
 	if !ok {
-		return fmt.Errorf("invalid data type, expected *Trace, got %T", data)
+		return fmt.Errorf("invalid data type, expected *Trace, got %T", v)
 	}
-	binTraceId, err := unhexAndPad(_data.TraceID, 16)
+	binTraceId, err := unhexAndPad(ti.TraceID, 16)
 	if err != nil {
 		return err
 	}
-	binParentID, err := unhexAndPad(_data.ParentID, 8)
+	binParentID, err := unhexAndPad(ti.ParentID, 8)
 	if err != nil {
 		return err
 	}
-	binSpanID, err := unhexAndPad(_data.SpanID, 8)
+	binSpanID, err := unhexAndPad(ti.SpanID, 8)
 	if err != nil {
 		return err
 	}
-	trace := &TraceV2{
+	trace := &TempoTrace{
 		OID:         "0",
 		TraceID:     binTraceId,
 		SpanID:      binSpanID,
 		ParentID:    binParentID,
-		Name:        _data.Name,
-		TimestampNs: _data.TimestampNs,
-		DurationNs:  _data.DurationNs,
-		ServiceName: _data.ServiceName,
-		PayloadType: _data.PayloadType,
-		Payload:     _data.Payload,
+		Name:        ti.Name,
+		TimestampNs: ti.TimestampNs,
+		DurationNs:  ti.DurationNs,
+		ServiceName: ti.ServiceName,
+		PayloadType: ti.PayloadType,
+		Payload:     ti.Payload,
 	}
 	err = b.Batch.AppendStruct(trace)
 	if err != nil {
 		return err
 	}
-	for _, tag := range _data.Tags {
-		attr := &TraceTagsV2{
+	for _, tag := range ti.Tags {
+		attr := &TempoTraceTag{
 			OID:         "0",
 			Date:        time.Unix(0, trace.TimestampNs).Truncate(time.Hour * 24),
 			Key:         tag[0],
 			Val:         tag[1],
 			TraceID:     binTraceId,
 			SpanID:      binSpanID,
-			TimestampNs: _data.TimestampNs,
-			DurationNs:  _data.DurationNs,
+			TimestampNs: ti.TimestampNs,
+			DurationNs:  ti.DurationNs,
 		}
-		err = b.subBatch.AppendStruct(attr)
+		err = b.tagsBatch.AppendStruct(attr)
 		if err != nil {
 			return err
 		}
@@ -64,10 +65,10 @@ func (b *batchV2) AppendStruct(data any) error {
 	return nil
 }
 
-func (b *batchV2) Abort() error {
+func (b *traceWithTagsBatch) Abort() error {
 	var errs [2]error
 	errs[0] = b.Batch.Abort()
-	errs[1] = b.subBatch.Abort()
+	errs[1] = b.tagsBatch.Abort()
 	for _, err := range errs {
 		if err != nil {
 			return err
@@ -76,10 +77,10 @@ func (b *batchV2) Abort() error {
 	return nil
 }
 
-func (b *batchV2) Send() error {
+func (b *traceWithTagsBatch) Send() error {
 	var errs [2]error
 	errs[0] = b.Batch.Send()
-	errs[1] = b.subBatch.Send()
+	errs[1] = b.tagsBatch.Send()
 	for _, err := range errs {
 		if err != nil {
 			return err
