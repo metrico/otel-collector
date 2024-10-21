@@ -30,6 +30,8 @@ type Config struct {
 	configretry.BackOffConfig      `mapstructure:"retry_on_failure"`
 	exporterhelper.QueueSettings   `mapstructure:"sending_queue"`
 
+	TracesDitstibutedExportV2 bool `mapstructure:"traces_distributed_export_v2"`
+
 	ClusteredClickhouse bool `mapstructure:"clustered_clickhouse"`
 
 	// DSN is the ClickHouse server Data Source Name.
