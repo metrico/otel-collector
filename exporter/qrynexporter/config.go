@@ -30,6 +30,10 @@ type Config struct {
 	configretry.BackOffConfig      `mapstructure:"retry_on_failure"`
 	exporterhelper.QueueSettings   `mapstructure:"sending_queue"`
 
+<<<<<<< HEAD
+=======
+	// ClientSideTraceProcessing is a boolean that indicates whether to process traces on the client side.
+>>>>>>> e35202d (refactor: improve the code structure and documentation of qrynexporter.)
 	ClientSideTraceProcessing bool `mapstructure:"client_side_trace_processing"`
 
 	ClusteredClickhouse bool `mapstructure:"clustered_clickhouse"`

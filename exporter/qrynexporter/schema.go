@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	tracesInputSQL = func(clustered bool) string {
+	tracesInputSQL = func(_ bool) string {
 		return `INSERT INTO traces_input (
   trace_id, 
   span_id, 
@@ -110,8 +110,8 @@ func TracesTagsV2InputSQL(clustered bool) string {
 //
 // ) Engine=Null
 
-// Trace represent trace model
-type Trace struct {
+// TraceInput represent trace model
+type TraceInput struct {
 	TraceID     string     `ch:"trace_id"`
 	SpanID      string     `ch:"span_id"`
 	ParentID    string     `ch:"parent_id"`
@@ -124,7 +124,7 @@ type Trace struct {
 	Tags        [][]string `ch:"tags"`
 }
 
-type TraceV2 struct {
+type TempoTrace struct {
 	OID         string `ch:"oid"`
 	TraceID     []byte `ch:"trace_id"`
 	SpanID      []byte `ch:"span_id"`
@@ -137,7 +137,7 @@ type TraceV2 struct {
 	Payload     string `ch:"payload"`
 }
 
-type TraceTagsV2 struct {
+type TempoTraceTag struct {
 	OID         string    `ch:"oid"`
 	Date        time.Time `ch:"date"`
 	Key         string    `ch:"key"`

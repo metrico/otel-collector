@@ -34,8 +34,11 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+type contextKey string
+
 const (
-	spanLinkDataFormat = "%s|%s|%s|%s|%d"
+	spanLinkDataFormat            = "%s|%s|%s|%s|%d"
+	clusterKey         contextKey = "cluster"
 )
 
 var delegate = &protojson.MarshalOptions{
@@ -48,9 +51,9 @@ type tracesExporter struct {
 	logger *zap.Logger
 	meter  metric.Meter
 
-	db      clickhouse.Conn
-	cluster bool
-	v2      bool
+	db         clickhouse.Conn
+	cluster    bool
+	clientSide bool
 }
 
 // newTracesExporter returns a SpanWriter for the database
@@ -64,11 +67,19 @@ func newTracesExporter(logger *zap.Logger, cfg *Config, set *exporter.Settings) 
 		return nil, err
 	}
 	exp := &tracesExporter{
+<<<<<<< HEAD
 		logger:  logger,
 		meter:   set.MeterProvider.Meter(typeStr),
 		db:      db,
 		cluster: cfg.ClusteredClickhouse,
 		v2:      cfg.ClusteredClickhouse && cfg.ClientSideTraceProcessing,
+=======
+		logger:     logger,
+		meter:      set.MeterProvider.Meter(typeStr),
+		db:         db,
+		cluster:    cfg.ClusteredClickhouse,
+		clientSide: cfg.ClientSideTraceProcessing,
+>>>>>>> e35202d (refactor: improve the code structure and documentation of qrynexporter.)
 	}
 	if err := initMetrics(exp.meter); err != nil {
 		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
@@ -165,11 +176,11 @@ func extractScopeTags(il pcommon.InstrumentationScope, tags map[string]string) {
 }
 
 func (e *tracesExporter) exportResourceSapns(ctx context.Context, resourceSpans ptrace.ResourceSpansSlice) error {
-	isCluster := ctx.Value("cluster").(bool)
+	isCluster := ctx.Value(clusterKey).(bool)
 	var batch driver.Batch
 	var err error
-	if e.v2 {
-		batch, err = e.prepareBatchV2(ctx)
+	if e.clientSide {
+		batch, err = e.prepareBatchClientSide(ctx)
 	} else {
 		batch, err = e.db.PrepareBatch(ctx, tracesInputSQL(isCluster))
 	}
@@ -196,7 +207,7 @@ func (e *tracesExporter) exportResourceSapns(ctx context.Context, resourceSpans 
 	return nil
 }
 
-func (e *tracesExporter) prepareBatchV2(ctx context.Context) (driver.Batch, error) {
+func (e *tracesExporter) prepareBatchClientSide(ctx context.Context) (driver.Batch, error) {
 	batch, err := e.db.PrepareBatch(ctx, TracesV2InputSQL(e.cluster))
 	if err != nil {
 		return nil, err
@@ -206,15 +217,15 @@ func (e *tracesExporter) prepareBatchV2(ctx context.Context) (driver.Batch, erro
 		batch.Abort()
 		return nil, err
 	}
-	return &batchV2{
-		Batch:    batch,
-		subBatch: subBatch,
+	return &traceWithTagsBatch{
+		Batch:     batch,
+		tagsBatch: subBatch,
 	}, nil
 }
 
 // traceDataPusher implements OTEL exporterhelper.traceDataPusher
 func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) error {
-	_ctx := context.WithValue(ctx, "cluster", e.cluster)
+	_ctx := context.WithValue(ctx, clusterKey, e.cluster)
 	start := time.Now()
 	if err := e.exportResourceSapns(_ctx, td.ResourceSpans()); err != nil {
 		otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError, dataTypeTraces)))
@@ -387,7 +398,7 @@ func marshalSpanToJSON(span ptrace.Span, mergedAttributes pcommon.Map) ([]byte, 
 	return delegate.Marshal(otlpSpan)
 }
 
-func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName string, tags map[string]string) (*Trace, error) {
+func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName string, tags map[string]string) (*TraceInput, error) {
 	durationNano := uint64(span.EndTimestamp() - span.StartTimestamp())
 	tags = aggregateSpanTags(span, tags)
 	tags["service.name"] = serviceName
@@ -404,7 +415,7 @@ func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName
 		return nil, fmt.Errorf("failed to marshal span: %w", err)
 	}
 
-	trace := &Trace{
+	trace := &TraceInput{
 		TraceID:     span.TraceID().String(),
 		SpanID:      span.SpanID().String(),
 		ParentID:    span.ParentSpanID().String(),
