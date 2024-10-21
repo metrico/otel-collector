@@ -9,7 +9,7 @@
 
 # Configuration options:
 - `dsn` (required): Data Source Name for Clickhouse.
-  - Example: `tcp://localhost:9000/?database=cloki`
+  - Example: `tcp://localhost:9000/qryn`
 
 - `clustered_clickhouse` (required): 
   - Type: boolean
