@@ -50,6 +50,7 @@ type tracesExporter struct {
 
 	db      clickhouse.Conn
 	cluster bool
+	v2      bool
 }
 
 // newTracesExporter returns a SpanWriter for the database
@@ -67,6 +68,7 @@ func newTracesExporter(logger *zap.Logger, cfg *Config, set *exporter.Settings) 
 		meter:   set.MeterProvider.Meter(typeStr),
 		db:      db,
 		cluster: cfg.ClusteredClickhouse,
+		v2:      cfg.ClusteredClickhouse && cfg.TracesDitstibutedExportV2,
 	}
 	if err := initMetrics(exp.meter); err != nil {
 		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
@@ -164,7 +166,14 @@ func extractScopeTags(il pcommon.InstrumentationScope, tags map[string]string) {
 
 func (e *tracesExporter) exportResourceSapns(ctx context.Context, resourceSpans ptrace.ResourceSpansSlice) error {
 	isCluster := ctx.Value("cluster").(bool)
-	batch, err := e.db.PrepareBatch(ctx, tracesInputSQL(isCluster))
+	var batch driver.Batch
+	var err error
+	if e.v2 {
+		batch, err = e.prepareBatchV2(ctx)
+	} else {
+		batch, err = e.db.PrepareBatch(ctx, tracesInputSQL(isCluster))
+	}
+
 	if err != nil {
 		return err
 	}
@@ -185,6 +194,22 @@ func (e *tracesExporter) exportResourceSapns(ctx context.Context, resourceSpans 
 	}
 
 	return nil
+}
+
+func (e *tracesExporter) prepareBatchV2(ctx context.Context) (driver.Batch, error) {
+	batch, err := e.db.PrepareBatch(ctx, TracesV2InputSQL(e.cluster))
+	if err != nil {
+		return nil, err
+	}
+	subBatch, err := e.db.PrepareBatch(ctx, TracesTagsV2InputSQL(e.cluster))
+	if err != nil {
+		batch.Abort()
+		return nil, err
+	}
+	return &batchV2{
+		Batch:    batch,
+		subBatch: subBatch,
+	}, nil
 }
 
 // traceDataPusher implements OTEL exporterhelper.traceDataPusher

@@ -57,6 +57,40 @@ var (
 	}
 )
 
+func TracesV2InputSQL(clustered bool) string {
+	dist := ""
+	if clustered {
+		dist = "_dist"
+	}
+	return fmt.Sprintf(`INSERT INTO tempo_traces%s (
+  oid,
+  trace_id, 
+  span_id, 
+  parent_id, 
+  name, 
+  timestamp_ns, 
+  duration_ns, 
+  service_name,
+  payload_type, 
+  payload)`, dist)
+}
+
+func TracesTagsV2InputSQL(clustered bool) string {
+	dist := ""
+	if clustered {
+		dist = "_dist"
+	}
+	return fmt.Sprintf(`INSERT INTO tempo_traces_attrs_gin%s (
+    oid,
+    date,
+    key,
+    val,
+    trace_id,
+    span_id,
+    timestamp_ns,
+    duration)`, dist)
+}
+
 // Note: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
 // We need to align with the schema here.
 //
@@ -88,6 +122,30 @@ type Trace struct {
 	PayloadType int8       `ch:"payload_type"`
 	Payload     string     `ch:"payload"`
 	Tags        [][]string `ch:"tags"`
+}
+
+type TraceV2 struct {
+	OID         string `ch:"oid"`
+	TraceID     []byte `ch:"trace_id"`
+	SpanID      []byte `ch:"span_id"`
+	ParentID    []byte `ch:"parent_id"`
+	Name        string `ch:"name"`
+	TimestampNs int64  `ch:"timestamp_ns"`
+	DurationNs  int64  `ch:"duration_ns"`
+	ServiceName string `ch:"service_name"`
+	PayloadType int8   `ch:"payload_type"`
+	Payload     string `ch:"payload"`
+}
+
+type TraceTagsV2 struct {
+	OID         string    `ch:"oid"`
+	Date        time.Time `ch:"date"`
+	Key         string    `ch:"key"`
+	Val         string    `ch:"val"`
+	TraceID     []byte    `ch:"trace_id"`
+	SpanID      []byte    `ch:"span_id"`
+	TimestampNs int64     `ch:"timestamp_ns"`
+	DurationNs  int64     `ch:"duration"`
 }
 
 // Sample represent sample data
