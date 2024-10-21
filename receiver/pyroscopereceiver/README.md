@@ -13,7 +13,8 @@ Implements the Pyroscope ingest protocol and conveys the accepted profiles as Op
 - `timeout`: sets the server reponse timeout. Default is 10 seconds.
 - `metrics`: configures the metrics collection for the Pyroscope receiver.
     - `enable`: enables or disables metrics collection. Default is true.
-    - `exclude_labels`: a list of label names to exclude from the metrics. Available labels are:
+    - `exclude_labels`: a list of metrics and label names to exclude from the metrics. 
+       Available metrics are listed further. Metric name may be empty. Available labels are:
       - `service`: name of the service provided the pprof request
       - `type`: type of pprof request (jfr or pprof)
       - `encoding`: not used, empty
@@ -29,6 +30,13 @@ Implements the Pyroscope ingest protocol and conveys the accepted profiles as Op
 ```yaml
 receivers:
   pyroscopereceiver:
+    metrics:
+      enable: true
+      exclude_labels:
+      - metric: request_body_uncompressed_size_bytes
+        label: service
+      exclude_metrics:
+      - http_requests_total
     protocols:
       http:
         endpoint: 0.0.0.0:8062

@@ -180,7 +180,8 @@ func (r *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWriter
 		if otelcolReceiverPyroscopeHttpRequestTotal != nil {
 			otelcolReceiverPyroscopeHttpRequestTotal.Add(
 				ctx, 1,
-				metric.WithAttributeSet(*r.newOtelcolAttrSetHttp(pm.name, errorCodeSuccess, http.StatusNoContent)),
+				metric.WithAttributeSet(*r.newOtelcolAttrSetHttp(
+					"http_request_total", pm.name, errorCodeSuccess, http.StatusNoContent)),
 			)
 		}
 		writeResponseNoContent(resp)
@@ -191,7 +192,8 @@ func (r *pyroscopeReceiver) handle(ctx context.Context, resp http.ResponseWriter
 func (recv *pyroscopeReceiver) handleError(ctx context.Context, resp http.ResponseWriter, contentType string, statusCode int, msg string, service string, errorCode string) {
 	if otelcolReceiverPyroscopeHttpRequestTotal != nil {
 		otelcolReceiverPyroscopeHttpRequestTotal.Add(ctx, 1,
-			metric.WithAttributeSet(*recv.newOtelcolAttrSetHttp(service, errorCode, statusCode)))
+			metric.WithAttributeSet(*recv.newOtelcolAttrSetHttp(
+				"http_request_total", service, errorCode, statusCode)))
 	}
 
 	recv.logger.Error(msg)
@@ -249,14 +251,17 @@ func readParams(qs *url.Values) (params, error) {
 	return p, nil
 }
 
-func (r *pyroscopeReceiver) newOtelcolAttrSetHttp(service string, errorCode string, statusCode int) *attribute.Set {
+func (r *pyroscopeReceiver) newOtelcolAttrSetHttp(metric string, service string, errorCode string,
+	statusCode int) *attribute.Set {
 	keyValues := []attribute.KeyValue{
 		{Key: keyService, Value: attribute.StringValue(service)},
 		{Key: "error_code", Value: attribute.StringValue(errorCode)},
 		{Key: "status_code", Value: attribute.IntValue(statusCode)},
 	}
 	for i := len(keyValues) - 1; i >= 0; i-- {
-		if slices.Contains(r.cfg.Metrics.ExcludeLabels, string(keyValues[i].Key)) {
+		if slices.ContainsFunc(r.cfg.Metrics.ExcludeLabels, func(label ExcludeLabel) bool {
+			return (label.Metric == metric || label.Metric == "") && label.Label == string(keyValues[i].Key)
+		}) {
 			keyValues[i] = keyValues[len(keyValues)-1]
 			keyValues = keyValues[:len(keyValues)-1]
 		}
@@ -378,7 +383,8 @@ func (r *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request,
 	// TODO: try measure compressed size
 	if otelcolReceiverPyroscopeRequestBodyUncompressedSizeBytes != nil {
 		otelcolReceiverPyroscopeRequestBodyUncompressedSizeBytes.Record(ctx, int64(buf.Len()),
-			metric.WithAttributeSet(*r.newOtelcolAttrSetPayloadSizeBytes(pm.name, format, "")))
+			metric.WithAttributeSet(*r.newOtelcolAttrSetPayloadSizeBytes("request_body_uncompressed_size_bytes",
+				pm.name, format, "")))
 	}
 
 	resetHeaders(req)
@@ -445,7 +451,8 @@ func (r *pyroscopeReceiver) readProfiles(ctx context.Context, req *http.Request,
 	// sz may be 0 and it will be recorded
 	if otelcolReceiverPyroscopeParsedBodyUncompressedSizeBytes != nil {
 		otelcolReceiverPyroscopeParsedBodyUncompressedSizeBytes.Record(ctx, int64(sz),
-			metric.WithAttributeSet(*r.newOtelcolAttrSetPayloadSizeBytes(pm.name, formatPprof, "")))
+			metric.WithAttributeSet(*r.newOtelcolAttrSetPayloadSizeBytes(
+				"parsed_body_uncompressed_size_bytes", pm.name, formatPprof, "")))
 	}
 
 	return logs, nil
@@ -455,7 +462,7 @@ func ns(sec uint64) uint64 {
 	return sec * 1e9
 }
 
-func (r *pyroscopeReceiver) newOtelcolAttrSetPayloadSizeBytes(service string, typ string,
+func (r *pyroscopeReceiver) newOtelcolAttrSetPayloadSizeBytes(metric string, service string, typ string,
 	encoding string) *attribute.Set {
 	keyValues := []attribute.KeyValue{
 		{Key: keyService, Value: attribute.StringValue(service)},
@@ -463,7 +470,9 @@ func (r *pyroscopeReceiver) newOtelcolAttrSetPayloadSizeBytes(service string, ty
 		{Key: "encoding", Value: attribute.StringValue(encoding)},
 	}
 	for i := len(keyValues) - 1; i >= 0; i-- {
-		if slices.Contains(r.cfg.Metrics.ExcludeLabels, string(keyValues[i].Key)) {
+		if slices.ContainsFunc(r.cfg.Metrics.ExcludeLabels, func(label ExcludeLabel) bool {
+			return (label.Metric == metric || label.Metric == "") && label.Label == string(keyValues[i].Key)
+		}) {
 			keyValues[i] = keyValues[len(keyValues)-1]
 			keyValues = keyValues[:len(keyValues)-1]
 		}
