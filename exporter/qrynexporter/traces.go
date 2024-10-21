@@ -68,7 +68,7 @@ func newTracesExporter(logger *zap.Logger, cfg *Config, set *exporter.Settings) 
 		meter:   set.MeterProvider.Meter(typeStr),
 		db:      db,
 		cluster: cfg.ClusteredClickhouse,
-		v2:      cfg.ClusteredClickhouse && cfg.TracesDitstibutedExportV2,
+		v2:      cfg.ClusteredClickhouse && cfg.ClientSideTraceProcessing,
 	}
 	if err := initMetrics(exp.meter); err != nil {
 		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))

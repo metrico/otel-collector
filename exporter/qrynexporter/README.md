@@ -11,7 +11,8 @@
 
 - `dsn` (required): Clickhouse's dsn.
 - `clustered_clickhouse` (required): true if clickhouse cluster is used
-- `traces_distributed_export_v2`: use improved ingestion algorythm for traces. Data ingestion is sess performant but more evenly distributed 
+- `client_side_trace_processing`: use improved traces ingestion algorythm for clickhouse clusters. 
+Data ingestion is sess performant but more evenly distributed 
 
 # Example:
 ## Simple Trace Data

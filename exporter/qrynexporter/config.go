@@ -30,7 +30,7 @@ type Config struct {
 	configretry.BackOffConfig      `mapstructure:"retry_on_failure"`
 	exporterhelper.QueueSettings   `mapstructure:"sending_queue"`
 
-	TracesDitstibutedExportV2 bool `mapstructure:"traces_distributed_export_v2"`
+	ClientSideTraceProcessing bool `mapstructure:"client_side_trace_processing"`
 
 	ClusteredClickhouse bool `mapstructure:"clustered_clickhouse"`
 
