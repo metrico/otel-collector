@@ -20,13 +20,6 @@
   - Default: `true`
   - Description: Enables client-side processing of trace data. This can improve performance but may increase client-side resource usage.
 
-<<<<<<< HEAD
-- `dsn` (required): Clickhouse's dsn.
-- `clustered_clickhouse` (required): true if clickhouse cluster is used
-- `client_side_trace_processing`: use improved traces ingestion algorythm for clickhouse clusters. 
-Data ingestion is sess performant but more evenly distributed 
-=======
->>>>>>> e35202d (refactor: improve the code structure and documentation of qrynexporter.)
 
 # Example:
 ## Simple Trace Data

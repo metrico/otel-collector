@@ -67,19 +67,11 @@ func newTracesExporter(logger *zap.Logger, cfg *Config, set *exporter.Settings) 
 		return nil, err
 	}
 	exp := &tracesExporter{
-<<<<<<< HEAD
-		logger:  logger,
-		meter:   set.MeterProvider.Meter(typeStr),
-		db:      db,
-		cluster: cfg.ClusteredClickhouse,
-		v2:      cfg.ClusteredClickhouse && cfg.ClientSideTraceProcessing,
-=======
 		logger:     logger,
 		meter:      set.MeterProvider.Meter(typeStr),
 		db:         db,
 		cluster:    cfg.ClusteredClickhouse,
 		clientSide: cfg.ClientSideTraceProcessing,
->>>>>>> e35202d (refactor: improve the code structure and documentation of qrynexporter.)
 	}
 	if err := initMetrics(exp.meter); err != nil {
 		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
