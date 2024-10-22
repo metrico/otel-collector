@@ -30,6 +30,9 @@ type Config struct {
 	configretry.BackOffConfig      `mapstructure:"retry_on_failure"`
 	exporterhelper.QueueSettings   `mapstructure:"sending_queue"`
 
+	// ClientSideTraceProcessing is a boolean that indicates whether to process traces on the client side.
+	ClientSideTraceProcessing bool `mapstructure:"client_side_trace_processing"`
+
 	ClusteredClickhouse bool `mapstructure:"clustered_clickhouse"`
 
 	// DSN is the ClickHouse server Data Source Name.
