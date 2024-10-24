@@ -3,17 +3,17 @@ package pyroscope
 import "go.opentelemetry.io/collector/component"
 
 type Config struct {
-	ApplicationName string            `json:"application_name"`
-	Tags            map[string]string `json:"tags"`
-	ServerAddress   string            `json:"server_address"`
-	BasicAuth       BasicAuth         `json:"basic_auth"`
-	ProfileTypes    []string          `json:"profile_types"`
-	TenantID        string            `json:"tenant_id"`
+	ApplicationName string            `mapstructure:"application_name"`
+	Tags            map[string]string `mapstructure:"tags"`
+	ServerAddress   string            `mapstructure:"server_address"`
+	BasicAuth       BasicAuth         `mapstructure:"basic_auth"`
+	ProfileTypes    []string          `mapstructure:"profile_types"`
+	TenantID        string            `mapstructure:"tenant_id"`
 }
 
 type BasicAuth struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
 }
 
 func defaultConfig() component.Config {
