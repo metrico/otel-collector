@@ -452,7 +452,7 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 }
 
 func batchSamplesAndTimeSeries(ctx context.Context, db clickhouse.Conn, samples []Sample, timeSeries []TimeSerie) error {
-	isCluster := ctx.Value("cluster").(bool)
+	isCluster := ctx.Value(clusterKey).(bool)
 	samplesBatch, err := db.PrepareBatch(ctx, samplesSQL(isCluster))
 	if err != nil {
 		return err
