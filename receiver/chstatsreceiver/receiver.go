@@ -79,6 +79,7 @@ func (r *chReceiver) GetMetrics(ctx context.Context) error {
 		g.Go(func() error {
 			switch r.cfg.Type {
 			case RCV_TYPE_METRICS:
+			case "":
 				return r.getMetricsTemplate(ctx, _tpl)
 			case RCV_TYPE_LOGS:
 				return r.getLogsTemplate(ctx, _tpl)
