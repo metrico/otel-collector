@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"golang.org/x/sync/errgroup"
 	"text/template"
 	"time"
 
@@ -16,13 +18,14 @@ import (
 )
 
 type chReceiver struct {
-	cfg       *Config
-	db        clickhouse.Conn
-	consumer  consumer.Metrics
-	templates []*template.Template
-	logger    *zap.Logger
-	cancel    context.CancelFunc
-	ticker    *time.Ticker
+	cfg             *Config
+	db              clickhouse.Conn
+	metricsConsumer consumer.Metrics
+	logsConsumer    consumer.Logs
+	templates       []*template.Template
+	logger          *zap.Logger
+	cancel          context.CancelFunc
+	ticker          *time.Ticker
 }
 
 func (r *chReceiver) Start(ctx context.Context, _ component.Host) error {
@@ -70,13 +73,20 @@ func (r *chReceiver) mainLoop(ctx context.Context) {
 }
 
 func (r *chReceiver) GetMetrics(ctx context.Context) error {
+	g := errgroup.Group{}
 	for _, tpl := range r.templates {
-		err := r.getMetricsTemplate(ctx, tpl)
-		if err != nil {
-			return err
-		}
+		_tpl := tpl
+		g.Go(func() error {
+			switch r.cfg.Type {
+			case RCV_TYPE_METRICS:
+				return r.getMetricsTemplate(ctx, _tpl)
+			case RCV_TYPE_LOGS:
+				return r.getLogsTemplate(ctx, _tpl)
+			}
+			return nil
+		})
 	}
-	return nil
+	return g.Wait()
 }
 
 func (r *chReceiver) getMetricsTemplate(ctx context.Context, tpl *template.Template) error {
@@ -125,7 +135,57 @@ func (r *chReceiver) getMetricsTemplate(ctx context.Context, tpl *template.Templ
 		case <-ctx.Done():
 			return nil
 		default:
-			err = r.consumer.ConsumeMetrics(ctx, metrics)
+			err = r.metricsConsumer.ConsumeMetrics(ctx, metrics)
+			if err != nil {
+				return wrapErr(err)
+			}
+		}
+	}
+	return nil
+}
+
+func (r *chReceiver) getLogsTemplate(ctx context.Context, tpl *template.Template) error {
+	queryBuf := bytes.Buffer{}
+	params := map[string]any{
+		"timestamp_ns": time.Now().UnixNano(),
+		"timestamp_ms": time.Now().UnixMilli(),
+		"timestamp_s":  time.Now().Unix(),
+	}
+	err := tpl.Execute(&queryBuf, params)
+	wrapErr := func(err error) error {
+		return fmt.Errorf("failed to execute. Query: %s; error: %w", queryBuf.String(), err)
+	}
+	if err != nil {
+		return wrapErr(err)
+	}
+	rows, err := r.db.Query(ctx, queryBuf.String())
+	if err != nil {
+		return wrapErr(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			labels [][]string
+			value  string
+		)
+		err = rows.Scan(&labels, &value)
+		if err != nil {
+			return wrapErr(err)
+		}
+		logs := plog.NewLogs()
+		res := logs.ResourceLogs().AppendEmpty()
+		res.Resource().Attributes()
+		log := res.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+		for _, label := range labels {
+			log.Attributes().PutStr(label[0], label[1])
+		}
+		log.Body().SetStr(value)
+		log.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			err = r.logsConsumer.ConsumeLogs(ctx, logs)
 			if err != nil {
 				return wrapErr(err)
 			}
