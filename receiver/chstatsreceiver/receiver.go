@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"go.opentelemetry.io/collector/pdata/plog"
-	"golang.org/x/sync/errgroup"
 	"text/template"
 	"time"
+
+	"go.opentelemetry.io/collector/pdata/plog"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"go.opentelemetry.io/collector/component"
