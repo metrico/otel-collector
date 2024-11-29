@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -93,6 +94,7 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error)
 	payload_type := make([]string, 0)
 	payload := make([][]byte, 0)
 	tree := make([][]tuple, 0)
+	var pooledTrees []*PooledTree
 	functions := make([][]tuple, 0)
 
 	rl := ls.ResourceLogs()
@@ -179,7 +181,8 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error)
 				return 0, err
 			}
 
-			tree = append(tree, _tree)
+			pooledTrees = append(pooledTrees, _tree)
+			tree = append(tree, _tree.data)
 
 			idx = offset + s
 			ch.logger.Debug(
@@ -239,13 +242,8 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error)
 		return 0, err
 	}
 	err = b.Send()
-	for _, tpls := range tree {
-		for _, t := range tpls {
-			for _, v := range t[3].([]tuple) {
-				triples.put(v)
-			}
-			quadruples.put(t)
-		}
+	for _, tpls := range pooledTrees {
+		trees.put(tpls)
 	}
 	return offset, err
 }
@@ -302,58 +300,90 @@ func readFunctionsFromMap(m pcommon.Map) ([]tuple, error) {
 }
 
 type LimitedPool struct {
-	m    sync.RWMutex
-	pool *sync.Pool
-	size int
+	m          sync.RWMutex
+	pool       [20]*sync.Pool
+	createPool func() *sync.Pool
 }
 
-func (l *LimitedPool) get() tuple {
+type PooledTree struct {
+	time         time.Time
+	triplesCount int
+	data         []tuple
+	triples      []tuple
+}
+
+func (l *LimitedPool) get(quadruples int, triples int) *PooledTree {
 	l.m.Lock()
 	defer l.m.Unlock()
-	l.size--
-	if l.size < 0 {
-		l.size = 0
+	var pool *sync.Pool
+	if triples >= 20 {
+		pool = l.createPool()
+	} else if l.pool[triples] == nil {
+		l.pool[triples] = l.createPool()
+		pool = l.pool[triples]
+	} else {
+		pool = l.pool[triples]
 	}
-	return l.pool.Get().(tuple)
+	tree := pool.Get().(*PooledTree)
+	var redo bool
+	if cap(tree.triples) < quadruples*triples {
+		tree.triples = make([]tuple, quadruples*triples)
+		for i := range tree.triples {
+			tree.triples[i] = tuple{nil, nil, nil}
+		}
+		redo = true
+	}
+	tree.triples = tree.triples[:quadruples*triples]
+	if cap(tree.data) < quadruples {
+		tree.data = make([]tuple, quadruples)
+		redo = true
+	}
+	tree.data = tree.data[:quadruples]
+	if redo || tree.triplesCount != triples {
+		j := 0
+		for i := range tree.data {
+			_triples := tree.triples[j : j+triples]
+			j += triples
+			tree.data[i] = tuple{nil, nil, nil, _triples}
+		}
+	}
+	tree.triplesCount = triples
+	return tree
 }
 
-func (l *LimitedPool) put(t tuple) {
+func (l *LimitedPool) put(t *PooledTree) {
 	l.m.Lock()
 	defer l.m.Unlock()
-	if l.size >= 100000 {
+	if t.triplesCount >= 20 {
 		return
 	}
-	l.size++
-	l.pool.Put(t)
+	pool := l.pool[t.triplesCount]
+	if time.Now().Sub(t.time) < time.Minute {
+		pool.Put(t)
+	}
 }
 
-var triples = LimitedPool{
-	pool: &sync.Pool{
-		New: func() interface{} {
-			return make(tuple, 3)
-		},
+var trees = LimitedPool{
+	createPool: func() *sync.Pool {
+		return &sync.Pool{
+			New: func() interface{} {
+				return &PooledTree{time: time.Now()}
+			},
+		}
 	},
 }
 
-var quadruples = LimitedPool{
-	pool: &sync.Pool{
-		New: func() interface{} {
-			return make(tuple, 4)
-		},
-	},
-}
-
-func readTreeFromMap(m pcommon.Map) ([]tuple, error) {
+func readTreeFromMap(m pcommon.Map) (*PooledTree, error) {
 	raw, _ := m.Get("tree")
 	bRaw := bytes.NewReader(raw.Bytes().AsRaw())
-	size, err := binary.ReadVarint(bRaw)
+	treeSize, err := binary.ReadVarint(bRaw)
 	if err != nil {
 		return nil, err
 	}
 
-	res := make([]tuple, size)
+	var res *PooledTree
 
-	for i := int64(0); i < size; i++ {
+	for i := int64(0); i < treeSize; i++ {
 		parentId, err := binary.ReadUvarint(bRaw)
 		if err != nil {
 			return nil, err
@@ -374,8 +404,11 @@ func readTreeFromMap(m pcommon.Map) ([]tuple, error) {
 			return nil, err
 		}
 
-		values := make([]tuple, size)
-		for i := range values {
+		if res == nil {
+			res = trees.get(int(treeSize), int(size))
+		}
+
+		for j := int64(0); j < size; j++ {
 			size, err := binary.ReadVarint(bRaw)
 			if err != nil {
 				return nil, err
@@ -395,17 +428,13 @@ func readTreeFromMap(m pcommon.Map) ([]tuple, error) {
 			if err != nil {
 				return nil, err
 			}
-
-			values[i] = triples.get() // tuple{name, self, total}
-			values[i][0] = name
-			values[i][1] = self
-			values[i][2] = total
+			res.data[i][3].([]tuple)[j][0] = name
+			res.data[i][3].([]tuple)[j][1] = self
+			res.data[i][3].([]tuple)[j][2] = total
 		}
-		res[i] = quadruples.get() // tuple{parentId, fnId, nodeId, values}
-		res[i][0] = parentId
-		res[i][1] = fnId
-		res[i][2] = nodeId
-		res[i][3] = values
+		res.data[i][0] = parentId
+		res.data[i][1] = fnId
+		res.data[i][2] = nodeId
 	}
 	return res, nil
 }
