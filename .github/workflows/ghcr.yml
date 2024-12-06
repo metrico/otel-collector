@@ -10,8 +10,10 @@ env:
   REGISTRY: ghcr.io
       
 jobs:
-  build:
+  tag_bump:
     runs-on: ubuntu-latest
+    outputs:
+      new_tag: ${{ steps.tag_bump.outputs.new_tag }}
     steps:
       - uses: actions/checkout@v2
       - id: tag_bump
@@ -22,13 +24,32 @@ jobs:
           DEFAULT_BUMP: patch
           RELEASE_BRANCHES: main
           PRERELEASE: true
+  build:
+    needs: tag_bump
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        platform: [ amd64, arm64 ]
+        include:
+          - platform: amd64
+            runner: ubuntu-latest
+          - platform: arm64
+            runner: ARM64
+    steps:
+      - uses: actions/checkout@v2
       - name: Log in to the Container registry
         uses: docker/login-action@v2.1.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
+      - id: platform_suffix
+        run: |
+          if [ "${{ matrix.platform }}" == "arm64" ]; then
+            echo "PLATFORM_SUFFIX=-arm64" >> $GITHUB_ENV
+          else
+            echo "PLATFORM_SUFFIX=" >> $GITHUB_ENV
+          fi
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v4.1.1
@@ -36,8 +57,8 @@ jobs:
           images: |
             ghcr.io/metrico/qryn-otel-collector
           tags: |
-            latest
-            ${{ steps.tag_bump.outputs.new_tag }}
+            latest${{ env.PLATFORM_SUFFIX }}
+            ${{ needs.tag_bump.outputs.new_tag }}${{ env.PLATFORM_SUFFIX }}
       - name: Build and push
         uses: docker/build-push-action@v3.2.0
         with:
