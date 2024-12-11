@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -341,13 +340,6 @@ func (r *pyroscopeReceiver) getProfilesBuff(req *http.Request) (*bytes.Buffer, e
 		var f multipart.File
 		f, err = r.openMultipart(req)
 		if err != nil {
-			fmt.Println(req.URL.String())
-			for k, v := range req.Header {
-				fmt.Printf("Header: %s: %v", k, v)
-			}
-			b, _ := io.ReadAll(req.Body)
-			//TODO: encode b to hex
-			fmt.Printf("Body: %s\n", hex.EncodeToString(b))
 			return nil, err
 		}
 		defer f.Close()
