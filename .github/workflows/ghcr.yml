@@ -57,8 +57,8 @@ jobs:
           images: |
             ghcr.io/metrico/qryn-otel-collector
           tags: |
-            latest${{ env.PLATFORM_SUFFIX }}
-            ${{ needs.tag_bump.outputs.new_tag }}${{ env.PLATFORM_SUFFIX }}
+            latest
+            ${{ needs.tag_bump.outputs.new_tag }}
       - name: Build and push
         uses: docker/build-push-action@v3.2.0
         with:
