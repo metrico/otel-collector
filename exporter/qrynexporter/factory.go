@@ -45,7 +45,7 @@ func createDefaultConfig() component.Config {
 		QueueSettings:    exporterhelper.NewDefaultQueueSettings(),
 		BackOffConfig:    configretry.NewDefaultBackOffConfig(),
 		DSN:              defaultDSN,
-		TracePayloadType: "json",
+		TracePayloadType: defaultTracePayloadType,
 	}
 }
 
