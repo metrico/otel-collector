@@ -33,7 +33,8 @@ func TestLoadConfig(t *testing.T) {
 		{
 			id: component.NewIDWithName(component.MustNewType(typeStr), "full"),
 			expected: &Config{
-				DSN: defaultDSN,
+				DSN:              defaultDSN,
+				TracePayloadType: defaultTracePayloadType,
 				TimeoutSettings: exporterhelper.TimeoutSettings{
 					Timeout: 5 * time.Second,
 				},
