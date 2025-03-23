@@ -1,6 +1,8 @@
 module github.com/metrico/otel-collector
 
 go 1.22.0
+toolchain go1.24.1
+
 require (
 	connectrpc.com/connect v1.16.2
 	github.com/ClickHouse/clickhouse-go/v2 v2.28.2
@@ -375,7 +377,7 @@ require (
 	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
-	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
