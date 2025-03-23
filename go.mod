@@ -1,6 +1,8 @@
 module github.com/metrico/otel-collector
 
 go 1.22.0
+toolchain go1.24.1
+
 require (
 	connectrpc.com/connect v1.16.2
 	github.com/ClickHouse/clickhouse-go/v2 v2.28.2
@@ -165,7 +167,7 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/receiver/zookeeperreceiver v0.108.0
 	github.com/prometheus/common v0.55.0
 	github.com/prometheus/prometheus v0.54.1
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/collector/component v0.108.1
 	go.opentelemetry.io/collector/config/confighttp v0.108.1
 	go.opentelemetry.io/collector/config/configretry v1.14.1
@@ -356,7 +358,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
-	github.com/go-jose/go-jose/v4 v4.0.2 // indirect
+	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
