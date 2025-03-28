@@ -69,11 +69,12 @@ func newTracesExporter(logger *zap.Logger, cfg *Config, set *exporter.Settings) 
 		return nil, err
 	}
 	exp := &tracesExporter{
-		logger:     logger,
-		meter:      set.MeterProvider.Meter(typeStr),
-		db:         db,
-		cluster:    cfg.ClusteredClickhouse,
-		clientSide: cfg.ClusteredClickhouse && cfg.ClientSideTraceProcessing,
+		logger:           logger,
+		meter:            set.MeterProvider.Meter(typeStr),
+		db:               db,
+		cluster:          cfg.ClusteredClickhouse,
+		clientSide:       cfg.ClusteredClickhouse && cfg.ClientSideTraceProcessing,
+		tracePayloadType: cfg.TracePayloadType,
 	}
 	if err := initMetrics(exp.meter); err != nil {
 		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
@@ -436,7 +437,7 @@ func covertDBPayloadType(payloadType string) int8 {
 	case "json":
 		return 2
 	case "proto":
-		return 3
+		return 2
 	default:
 		return 2
 	}
