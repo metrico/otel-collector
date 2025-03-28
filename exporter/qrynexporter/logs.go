@@ -380,6 +380,7 @@ func convertLogToSample(fingerprint model.Fingerprint, log plog.LogRecord, res p
 		Fingerprint: uint64(fingerprint),
 		TimestampNs: timestampFromLogRecord(log).UnixNano(),
 		String:      line,
+		Type:        SAMPLE_TYPE_LOG,
 	}, nil
 }
 
@@ -393,6 +394,7 @@ func convertLogToTimeSerie(fingerprint model.Fingerprint, log plog.LogRecord, la
 		Fingerprint: uint64(fingerprint),
 		Labels:      string(labelsJSON),
 		Name:        string(labelSet[model.MetricNameLabel]),
+		Type:        SAMPLE_TYPE_LOG,
 	}
 	return timeSerie, nil
 }

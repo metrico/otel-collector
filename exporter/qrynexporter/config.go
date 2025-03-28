@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	defaultDSN = "tcp://127.0.0.1:9000/cloki"
+	defaultDSN              = "tcp://127.0.0.1:9000/cloki"
+	defaultTracePayloadType = "json"
 )
 
 // Config defines configuration for logging exporter.
@@ -39,6 +40,10 @@ type Config struct {
 	// For tcp protocol reference: [ClickHouse/clickhouse-go#dsn](https://github.com/ClickHouse/clickhouse-go#dsn).
 	// For http protocol reference: [mailru/go-clickhouse/#dsn](https://github.com/mailru/go-clickhouse/#dsn).
 	DSN string `mapstructure:"dsn"`
+
+	// TracePayloadType is the type of payload to send to ClickHouse.
+	// Supported types are "json" and "proto". default is "json".
+	TracePayloadType string `mapstructure:"trace_payload_type"`
 
 	// Logs is used to configure the log data.
 	Logs LogsConfig `mapstructure:"logs"`
