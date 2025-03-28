@@ -24,9 +24,17 @@ func createDefaultConfig() component.Config {
 
 func createMetricsReceiver(_ context.Context, set receiver.Settings, cfg component.Config, consumer consumer.Metrics) (receiver.Metrics, error) {
 	return &chReceiver{
-		cfg:      cfg.(*Config),
-		logger:   set.Logger,
-		consumer: consumer,
+		cfg:             cfg.(*Config),
+		logger:          set.Logger,
+		metricsConsumer: consumer,
+	}, nil
+}
+
+func createLogsReceiver(_ context.Context, set receiver.Settings, cfg component.Config, consumer consumer.Logs) (receiver.Logs, error) {
+	return &chReceiver{
+		cfg:          cfg.(*Config),
+		logger:       set.Logger,
+		logsConsumer: consumer,
 	}, nil
 }
 
@@ -34,5 +42,6 @@ func NewFactory() receiver.Factory {
 	return receiver.NewFactory(
 		component.MustNewType(typeStr),
 		createDefaultConfig,
-		receiver.WithMetrics(createMetricsReceiver, component.StabilityLevelAlpha))
+		receiver.WithMetrics(createMetricsReceiver, component.StabilityLevelAlpha),
+		receiver.WithLogs(createLogsReceiver, component.StabilityLevelAlpha))
 }

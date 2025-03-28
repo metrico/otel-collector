@@ -8,9 +8,15 @@ import (
 	"go.opentelemetry.io/collector/component"
 )
 
+const (
+	RCV_TYPE_METRICS = "metrics"
+	RCV_TYPE_LOGS    = "logs"
+)
+
 // Represents the receiver config within the collector's config.yaml
 type Config struct {
 	DSN     string        `mapstructure:"dsn"`
+	Type    string        `mapstructure:"type"`
 	Timeout time.Duration `mapstructure:"timeout"`
 	Queries []string      `mapstructure:"queries"`
 }
