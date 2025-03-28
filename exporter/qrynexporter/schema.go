@@ -48,7 +48,7 @@ var (
   fingerprint,
   timestamp_ns,
   value, 
-  string, type)`, dist)
+  string, `+"`type`)", dist)
 	}
 	TimeSerieSQL = func(clustered bool) string {
 		dist := ""
@@ -59,7 +59,7 @@ var (
   date, 
   fingerprint,
   labels,
-  name, type)`, dist)
+  name, `+"`type`)", dist)
 	}
 )
 
