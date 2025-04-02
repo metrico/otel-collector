@@ -32,6 +32,7 @@ import (
 	tracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type contextKey string
@@ -51,9 +52,10 @@ type tracesExporter struct {
 	logger *zap.Logger
 	meter  metric.Meter
 
-	db         clickhouse.Conn
-	cluster    bool
-	clientSide bool
+	db               clickhouse.Conn
+	cluster          bool
+	clientSide       bool
+	tracePayloadType string
 }
 
 // newTracesExporter returns a SpanWriter for the database
@@ -67,11 +69,12 @@ func newTracesExporter(logger *zap.Logger, cfg *Config, set *exporter.Settings) 
 		return nil, err
 	}
 	exp := &tracesExporter{
-		logger:     logger,
-		meter:      set.MeterProvider.Meter(typeStr),
-		db:         db,
-		cluster:    cfg.ClusteredClickhouse,
-		clientSide: cfg.ClusteredClickhouse && cfg.ClientSideTraceProcessing,
+		logger:           logger,
+		meter:            set.MeterProvider.Meter(typeStr),
+		db:               db,
+		cluster:          cfg.ClusteredClickhouse,
+		clientSide:       cfg.ClusteredClickhouse && cfg.ClientSideTraceProcessing,
+		tracePayloadType: cfg.TracePayloadType,
 	}
 	if err := initMetrics(exp.meter); err != nil {
 		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
@@ -146,7 +149,7 @@ func (e *tracesExporter) exportSpans(
 	for i := 0; i < spans.Len(); i++ {
 		span := spans.At(i)
 		spanLinksToTags(span.Links(), tags)
-		tracesInput, err := convertTracesInput(span, resource, localServiceName, tags)
+		tracesInput, err := convertTracesInput(span, resource, localServiceName, tags, e.tracePayloadType)
 		if err != nil {
 			e.logger.Error("convertTracesInput", zap.Error(err))
 			continue
@@ -363,7 +366,7 @@ func spanEventSliceToSpanEvents(spanEvents ptrace.SpanEventSlice) []*tracev1.Spa
 	return events
 }
 
-func marshalSpanToJSON(span ptrace.Span, mergedAttributes pcommon.Map) ([]byte, error) {
+func marshalSpan(payloadType string, span ptrace.Span, mergedAttributes pcommon.Map) ([]byte, error) {
 	traceID := span.TraceID()
 	spanID := span.SpanID()
 	parentSpanID := span.ParentSpanID()
@@ -387,10 +390,17 @@ func marshalSpanToJSON(span ptrace.Span, mergedAttributes pcommon.Map) ([]byte, 
 			Message: span.Status().Message(),
 		},
 	}
-	return delegate.Marshal(otlpSpan)
+	switch payloadType {
+	case "json":
+		return delegate.Marshal(otlpSpan)
+	case "proto":
+		return proto.Marshal(otlpSpan)
+	default:
+		return nil, fmt.Errorf("unsupported payload type: %s", payloadType)
+	}
 }
 
-func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName string, tags map[string]string) (*TraceInput, error) {
+func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName string, tags map[string]string, payloadType string) (*TraceInput, error) {
 	durationNano := uint64(span.EndTimestamp() - span.StartTimestamp())
 	tags = aggregateSpanTags(span, tags)
 	tags["service.name"] = serviceName
@@ -402,11 +412,10 @@ func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName
 	for k, v := range tags {
 		mTags = append(mTags, []string{k, v})
 	}
-	payload, err := marshalSpanToJSON(span, mergeAttributes(span, resource))
+	payload, err := marshalSpan(payloadType, span, mergeAttributes(span, resource))
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal span: %w", err)
 	}
-
 	trace := &TraceInput{
 		TraceID:     span.TraceID().String(),
 		SpanID:      span.SpanID().String(),
@@ -415,10 +424,21 @@ func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName
 		TimestampNs: int64(span.StartTimestamp()),
 		DurationNs:  int64(durationNano),
 		ServiceName: serviceName,
-		PayloadType: 2,
+		PayloadType: covertDBPayloadType(payloadType),
 		Tags:        mTags,
 		Payload:     string(payload),
 	}
 
 	return trace, nil
+}
+
+func covertDBPayloadType(payloadType string) int8 {
+	switch payloadType {
+	case "json":
+		return 2
+	case "proto":
+		return 2
+	default:
+		return 2
+	}
 }

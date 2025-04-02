@@ -20,6 +20,13 @@
   - Default: `true`
   - Description: Enables client-side processing of trace data. This can improve performance but may increase client-side resource usage.
 
+- `trace_payload_type` (optional):
+  - Type: string
+  - Default: `json`
+  - Supported values: `json`, `proto`
+  - Description: Specifies the format of trace data sent to ClickHouse. Please use `json` for compatibility with qryn up to 3.2.39. 
+For "Gigapipe" readers please use `proto`.
+
 
 # Example:
 ## Simple Trace Data

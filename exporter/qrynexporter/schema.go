@@ -19,6 +19,12 @@ import (
 	"time"
 )
 
+const (
+	SAMPLE_TYPE_UNDEFINED = 0
+	SAMPLE_TYPE_LOG       = 1
+	SAMPLE_TYPE_METRIC    = 2
+)
+
 var (
 	tracesInputSQL = func(_ bool) string {
 		return `INSERT INTO traces_input (
@@ -42,7 +48,7 @@ var (
   fingerprint,
   timestamp_ns,
   value, 
-  string)`, dist)
+  string, `+"`type`)", dist)
 	}
 	TimeSerieSQL = func(clustered bool) string {
 		dist := ""
@@ -53,7 +59,7 @@ var (
   date, 
   fingerprint,
   labels,
-  name)`, dist)
+  name, `+"`type`)", dist)
 	}
 )
 
@@ -165,6 +171,7 @@ type Sample struct {
 	TimestampNs int64   `ch:"timestamp_ns"`
 	Value       float64 `ch:"value"`
 	String      string  `ch:"string"`
+	Type        int8    `ch:"type"`
 }
 
 // TimeSerie represent TimeSerie
@@ -184,4 +191,5 @@ type TimeSerie struct {
 	Fingerprint uint64    `ch:"fingerprint"`
 	Labels      string    `ch:"labels"`
 	Name        string    `ch:"name"`
+	Type        int8      `ch:"type"`
 }
