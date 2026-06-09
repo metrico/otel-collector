@@ -54,7 +54,7 @@ build-qryn-collector:
 	@echo "------------------"
 	@echo "--> Building qryn collector docker image"
 	@echo "------------------"
-	docker buildx build --progress plane \
+	docker buildx build --progress plain \
 		--no-cache -f cmd/otel-collector/Dockerfile \
 		--tag $(REPONAME)/$(IMAGE_NAME):$(DOCKER_TAG) .
 

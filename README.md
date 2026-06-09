@@ -229,3 +229,35 @@ A stream containing `{"severity":"info", "data": "a"}` should produce the follow
 ┌──────────fingerprint─┬────────timestamp_ns─┬─value─┬─string─────────────────────────┐
 │ 11473756280579456548 │ 1696502612955383384 │     0 │ {"data":"a","severity":"info"} │
 └──────────────────────┴─────────────────────┴───────┴────────────────────────────────┘
+```
+
+### Upstream version
+
+Wraps [`open-telemetry/opentelemetry-collector`](https://github.com/open-telemetry/opentelemetry-collector) **v0.154.0** and [`opentelemetry-collector-contrib`](https://github.com/open-telemetry/opentelemetry-collector-contrib) **v0.153.0**. Building from source requires **Go 1.25**.
+
+### Migration notes (v0.108 → v0.154)
+
+The image tagged `v0.154.0-rc1` and later jumps 46 minor versions of upstream OTel in one step. Most existing configs keep working unchanged; the items below need a one-line edit if your config uses them.
+
+**Removed exporters** (upstream-deleted, dropped from this distribution):
+
+| Removed | Replacement |
+|---|---|
+| `loki` exporter | `otlphttp` to Loki's OTLP endpoint — Loki accepts OTLP natively, see [Grafana docs](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/). The `lokireceiver` is **not** affected — receiving the legacy Loki HTTP push protocol is still supported. |
+| `opencensus` exporter & receiver | `otlp` |
+| `sapm` receiver | `otlp` or `signalfx` |
+| `carbon` exporter | `prometheusremotewrite` |
+| `bigip` receiver, `ecstaskobserver`, `routingprocessor` | — (see upstream contrib for status) |
+
+**Renamed YAML keys:**
+
+- `sending_queue: blocking: true` → `sending_queue: block_on_overflow: true` (only if you set it; default config is unaffected)
+
+**Behavioural defaults that changed:**
+
+- `processor/filter` and `processor/transform` default `error_mode` flipped from `propagate` to `ignore`. If you relied on errors propagating, set `error_mode: propagate` explicitly.
+
+**Exporter component-type renames (backward-compatible aliases still work):**
+
+- `otlphttp` → `otlp_http` (the old key still parses via a deprecated alias)
+- `otlp` (gRPC) → `otlp_grpc` (same — alias preserved)
