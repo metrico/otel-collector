@@ -25,10 +25,8 @@ const (
 	SAMPLE_TYPE_METRIC    = 2
 )
 
-// OpenTelemetry semantic-convention attribute names used by this exporter.
-// Inlined as constants so the exporter does not depend on a particular
-// version of the semconv package (the upstream collector/semconv was
-// deprecated in v0.127 and removed thereafter).
+// OpenTelemetry semantic-convention attribute names used by this exporter,
+// inlined so the package does not depend on an external semconv version.
 const (
 	attrServiceName           = "service.name"
 	attrServiceNamespace      = "service.namespace"

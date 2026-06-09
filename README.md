@@ -256,6 +256,7 @@ The image tagged `v0.154.0-rc1` and later jumps 46 minor versions of upstream OT
 **Behavioural defaults that changed:**
 
 - `processor/filter` and `processor/transform` default `error_mode` flipped from `propagate` to `ignore`. If you relied on errors propagating, set `error_mode: propagate` explicitly.
+- `sending_queue` now batches at the queue level by default (`min_size: 8192` items, `flush_timeout: 200ms`) via the new `queue_batch` machinery. The old `QueueSettings` had no batching concept, so a pipeline that previously flushed on every write may now buffer up to 8192 items or 200ms. Applies to `qryn` and `clickhouseprofile` exporters (any exporter using `exporterhelper`). To restore previous behaviour set `sending_queue.batch.min_size: 1` (or disable the queue with `sending_queue.enabled: false`).
 
 **Exporter component-type renames (backward-compatible aliases still work):**
 
