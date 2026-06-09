@@ -9,9 +9,9 @@ import (
 
 // Represents the receiver config within the collector's config.yaml
 type Config struct {
-	exporterhelper.TimeoutConfig                                   `mapstructure:",squash"`
-	configretry.BackOffConfig                                      `mapstructure:"retry_on_failure"`
-	QueueConfig configoptional.Optional[exporterhelper.QueueBatchConfig] `mapstructure:"sending_queue"`
+	exporterhelper.TimeoutConfig `mapstructure:",squash"`
+	configretry.BackOffConfig    `mapstructure:"retry_on_failure"`
+	QueueConfig                  configoptional.Optional[exporterhelper.QueueBatchConfig] `mapstructure:"sending_queue"`
 
 	// DSN is the ClickHouse server Data Source Name.
 	// For tcp protocol reference: [ClickHouse/clickhouse-go#dsn](https://github.com/ClickHouse/clickhouse-go#dsn).

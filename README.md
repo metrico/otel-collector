@@ -233,7 +233,7 @@ A stream containing `{"severity":"info", "data": "a"}` should produce the follow
 
 ### Upstream version
 
-Wraps [`open-telemetry/opentelemetry-collector`](https://github.com/open-telemetry/opentelemetry-collector) **v0.154.0** and [`opentelemetry-collector-contrib`](https://github.com/open-telemetry/opentelemetry-collector-contrib) **v0.153.0**. Building from source requires **Go 1.25**.
+Wraps [`open-telemetry/opentelemetry-collector`](https://github.com/open-telemetry/opentelemetry-collector) **v0.154.0** and [`opentelemetry-collector-contrib`](https://github.com/open-telemetry/opentelemetry-collector-contrib) **v0.153.0**. Building from source requires **Go 1.26**.
 
 ### Migration notes (v0.108 → v0.154)
 
