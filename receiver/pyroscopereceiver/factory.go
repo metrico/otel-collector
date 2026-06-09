@@ -7,6 +7,7 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/confighttp"
+	"go.opentelemetry.io/collector/config/confignet"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/receiver"
 )
@@ -23,7 +24,10 @@ func createDefaultConfig() component.Config {
 	return &Config{
 		Protocols: Protocols{
 			HTTP: &confighttp.ServerConfig{
-				Endpoint:           defaultHttpAddr,
+				NetAddr: confignet.AddrConfig{
+					Endpoint:  defaultHttpAddr,
+					Transport: confignet.TransportTypeTCP,
+				},
 				MaxRequestBodySize: defaultMaxRequestBodySize,
 			},
 		},

@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/value"
 	"go.opentelemetry.io/collector/exporter"
-	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/otel/metric"
@@ -105,15 +104,15 @@ func buildLabelSet(resource pcommon.Resource, attributes pcommon.Map, extras ...
 		return true
 	})
 	// service.name + service.namespace to job
-	if serviceName, ok := resource.Attributes().Get(conventions.AttributeServiceName); ok {
+	if serviceName, ok := resource.Attributes().Get(attrServiceName); ok {
 		val := serviceName.AsString()
-		if serviceNamespace, ok := resource.Attributes().Get(conventions.AttributeServiceNamespace); ok {
+		if serviceNamespace, ok := resource.Attributes().Get(attrServiceNamespace); ok {
 			val = fmt.Sprintf("%s/%s", serviceNamespace.AsString(), val)
 		}
 		out[model.LabelName(model.JobLabel)] = model.LabelValue(val)
 	}
 	// service.instance.id to instance
-	if instance, ok := resource.Attributes().Get(conventions.AttributeServiceInstanceID); ok {
+	if instance, ok := resource.Attributes().Get(attrServiceInstanceID); ok {
 		out[model.LabelName(model.InstanceLabel)] = model.LabelValue(instance.AsString())
 	}
 

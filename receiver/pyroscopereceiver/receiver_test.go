@@ -14,8 +14,10 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest/plogtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/config/confighttp"
+	"go.opentelemetry.io/collector/config/confignet"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -66,14 +68,17 @@ func startHttpServer(t *testing.T) (string, *consumertest.LogsSink) {
 	cfg := &Config{
 		Protocols: Protocols{
 			HTTP: &confighttp.ServerConfig{
-				Endpoint:           addr,
+				NetAddr: confignet.AddrConfig{
+					Endpoint:  addr,
+					Transport: confignet.TransportTypeTCP,
+				},
 				MaxRequestBodySize: defaultMaxRequestBodySize,
 			},
 		},
 		Timeout: defaultTimeout,
 	}
 	sink := new(consumertest.LogsSink)
-	set := receivertest.NewNopSettings()
+	set := receivertest.NewNopSettings(component.MustNewType(typeStr))
 	set.Logger = zap.Must(zap.NewDevelopment())
 	recv, err := newPyroscopeReceiver(cfg, sink, &set)
 	require.NoError(t, err)

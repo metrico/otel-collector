@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configoptional"
 	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
@@ -41,8 +42,8 @@ func NewFactory() exporter.Factory {
 
 func createDefaultConfig() component.Config {
 	return &Config{
-		TimeoutSettings:  exporterhelper.NewDefaultTimeoutSettings(),
-		QueueSettings:    exporterhelper.NewDefaultQueueSettings(),
+		TimeoutConfig:    exporterhelper.NewDefaultTimeoutConfig(),
+		QueueConfig:      configoptional.Some(exporterhelper.NewDefaultQueueConfig()),
 		BackOffConfig:    configretry.NewDefaultBackOffConfig(),
 		DSN:              defaultDSN,
 		TracePayloadType: defaultTracePayloadType,
@@ -62,14 +63,14 @@ func createTracesExporter(
 		return nil, fmt.Errorf("cannot configure qryn traces exporter: %w", err)
 	}
 
-	return exporterhelper.NewTracesExporter(
+	return exporterhelper.NewTraces(
 		ctx,
 		set,
 		cfg,
 		oce.pushTraceData,
 		exporterhelper.WithShutdown(oce.Shutdown),
-		exporterhelper.WithTimeout(c.TimeoutSettings),
-		exporterhelper.WithQueue(c.QueueSettings),
+		exporterhelper.WithTimeout(c.TimeoutConfig),
+		exporterhelper.WithQueue(c.QueueConfig),
 		exporterhelper.WithRetry(c.BackOffConfig),
 	)
 }
@@ -87,14 +88,14 @@ func createLogsExporter(
 		return nil, fmt.Errorf("cannot configure qryn logs exporter: %w", err)
 	}
 
-	return exporterhelper.NewLogsExporter(
+	return exporterhelper.NewLogs(
 		ctx,
 		set,
 		cfg,
 		exporter.pushLogsData,
 		exporterhelper.WithShutdown(exporter.Shutdown),
-		exporterhelper.WithTimeout(c.TimeoutSettings),
-		exporterhelper.WithQueue(c.QueueSettings),
+		exporterhelper.WithTimeout(c.TimeoutConfig),
+		exporterhelper.WithQueue(c.QueueConfig),
 		exporterhelper.WithRetry(c.BackOffConfig),
 	)
 }
@@ -112,14 +113,14 @@ func createMetricsExporter(
 		return nil, fmt.Errorf("cannot configure qryn logs exporter: %w", err)
 	}
 
-	return exporterhelper.NewMetricsExporter(
+	return exporterhelper.NewMetrics(
 		ctx,
 		set,
 		cfg,
 		exporter.pushMetricsData,
 		exporterhelper.WithShutdown(exporter.Shutdown),
-		exporterhelper.WithTimeout(c.TimeoutSettings),
-		exporterhelper.WithQueue(c.QueueSettings),
+		exporterhelper.WithTimeout(c.TimeoutConfig),
+		exporterhelper.WithQueue(c.QueueConfig),
 		exporterhelper.WithRetry(c.BackOffConfig),
 	)
 }

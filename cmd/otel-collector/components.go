@@ -8,13 +8,10 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/connector/routingconnector"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/connector/servicegraphconnector"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/connector/spanmetricsconnector"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/carbonexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/influxdbexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/kafkaexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/loadbalancingexporter"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/lokiexporter"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/opencensusexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/prometheusremotewriteexporter"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/zipkinexporter"
@@ -33,7 +30,6 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/oauth2clientauthextension"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/observer/dockerobserver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/observer/ecsobserver"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/observer/ecstaskobserver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/observer/hostobserver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/observer/k8sobserver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/oidcauthextension"
@@ -58,7 +54,6 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/redactionprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourcedetectionprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourceprocessor"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/routingprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/schemaprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/spanprocessor"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/tailsamplingprocessor"
@@ -75,7 +70,6 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/azureblobreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/azureeventhubreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/azuremonitorreceiver"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/bigipreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/carbonreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/chronyreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/cloudflarereceiver"
@@ -114,7 +108,6 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/namedpipereceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/nginxreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/nsxtreceiver"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/opencensusreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/oracledbreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/otlpjsonfilereceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/podmanreceiver"
@@ -127,7 +120,6 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/receivercreator"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/redisreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/riakreceiver"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/sapmreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/signalfxreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/simpleprometheusreceiver"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/skywalkingreceiver"
@@ -159,6 +151,7 @@ import (
 	"go.opentelemetry.io/collector/extension/zpagesextension"
 	"go.opentelemetry.io/collector/otelcol"
 	"go.opentelemetry.io/collector/processor"
+	"go.opentelemetry.io/collector/service/telemetry/otelconftelemetry"
 	"go.opentelemetry.io/collector/processor/batchprocessor"
 	"go.opentelemetry.io/collector/processor/memorylimiterprocessor"
 	"go.opentelemetry.io/collector/receiver"
@@ -188,7 +181,6 @@ func components() (otelcol.Factories, error) {
 		jaegerremotesampling.NewFactory(),
 		oauth2clientauthextension.NewFactory(),
 		ecsobserver.NewFactory(),
-		ecstaskobserver.NewFactory(),
 		hostobserver.NewFactory(),
 		k8sobserver.NewFactory(),
 		dockerobserver.NewFactory(),
@@ -207,10 +199,14 @@ func components() (otelcol.Factories, error) {
 		zipkinencodingextension.NewFactory(),
 		pyroscope.NewFactory(),
 	}
-	for _, ext := range factories.Extensions {
+	for t, ext := range factories.Extensions {
+		// Skip deprecated-alias entries that point to a factory already in the map.
+		if ext.Type() != t {
+			continue
+		}
 		extensions = append(extensions, ext)
 	}
-	factories.Extensions, err = extension.MakeFactoryMap(extensions...)
+	factories.Extensions, err = otelcol.MakeFactoryMap(extensions...)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -228,7 +224,6 @@ func components() (otelcol.Factories, error) {
 		azureblobreceiver.NewFactory(),
 		azureeventhubreceiver.NewFactory(),
 		azuremonitorreceiver.NewFactory(),
-		bigipreceiver.NewFactory(),
 		carbonreceiver.NewFactory(),
 		chronyreceiver.NewFactory(),
 		cloudflarereceiver.NewFactory(),
@@ -267,7 +262,6 @@ func components() (otelcol.Factories, error) {
 		namedpipereceiver.NewFactory(),
 		nginxreceiver.NewFactory(),
 		nsxtreceiver.NewFactory(),
-		opencensusreceiver.NewFactory(),
 		oracledbreceiver.NewFactory(),
 		otlpjsonfilereceiver.NewFactory(),
 		podmanreceiver.NewFactory(),
@@ -280,7 +274,6 @@ func components() (otelcol.Factories, error) {
 		receivercreator.NewFactory(),
 		redisreceiver.NewFactory(),
 		riakreceiver.NewFactory(),
-		sapmreceiver.NewFactory(),
 		signalfxreceiver.NewFactory(),
 		simpleprometheusreceiver.NewFactory(),
 		skywalkingreceiver.NewFactory(),
@@ -305,10 +298,13 @@ func components() (otelcol.Factories, error) {
 		pyroscopereceiver.NewFactory(),
 		chstatsreceiver.NewFactory(),
 	}
-	for _, rcv := range factories.Receivers {
+	for t, rcv := range factories.Receivers {
+		if rcv.Type() != t {
+			continue
+		}
 		receivers = append(receivers, rcv)
 	}
-	factories.Receivers, err = receiver.MakeFactoryMap(receivers...)
+	factories.Receivers, err = otelcol.MakeFactoryMap(receivers...)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -316,21 +312,21 @@ func components() (otelcol.Factories, error) {
 	exporters := []exporter.Factory{
 		qrynexporter.NewFactory(),
 		clickhouseprofileexporter.NewFactory(),
-		carbonexporter.NewFactory(),
 		fileexporter.NewFactory(),
 		kafkaexporter.NewFactory(),
 		loadbalancingexporter.NewFactory(),
-		opencensusexporter.NewFactory(),
 		prometheusexporter.NewFactory(),
 		prometheusremotewriteexporter.NewFactory(),
 		zipkinexporter.NewFactory(),
 		influxdbexporter.NewFactory(),
-		lokiexporter.NewFactory(),
 	}
-	for _, exp := range factories.Exporters {
+	for t, exp := range factories.Exporters {
+		if exp.Type() != t {
+			continue
+		}
 		exporters = append(exporters, exp)
 	}
-	factories.Exporters, err = exporter.MakeFactoryMap(exporters...)
+	factories.Exporters, err = otelcol.MakeFactoryMap(exporters...)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -350,16 +346,18 @@ func components() (otelcol.Factories, error) {
 		redactionprocessor.NewFactory(),
 		resourcedetectionprocessor.NewFactory(),
 		resourceprocessor.NewFactory(),
-		routingprocessor.NewFactory(),
 		schemaprocessor.NewFactory(),
 		spanprocessor.NewFactory(),
 		tailsamplingprocessor.NewFactory(),
 		transformprocessor.NewFactory(),
 	}
-	for _, pr := range factories.Processors {
+	for t, pr := range factories.Processors {
+		if pr.Type() != t {
+			continue
+		}
 		processors = append(processors, pr)
 	}
-	factories.Processors, err = processor.MakeFactoryMap(processors...)
+	factories.Processors, err = otelcol.MakeFactoryMap(processors...)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -373,10 +371,13 @@ func components() (otelcol.Factories, error) {
 		servicegraphconnector.NewFactory(),
 		spanmetricsconnector.NewFactory(),
 	}
-	for _, connector := range factories.Connectors {
+	for t, connector := range factories.Connectors {
+		if connector.Type() != t {
+			continue
+		}
 		connectors = append(connectors, connector)
 	}
-	factories.Connectors, err = connector.MakeFactoryMap(connectors...)
+	factories.Connectors, err = otelcol.MakeFactoryMap(connectors...)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -390,30 +391,30 @@ func CoreComponents() (
 ) {
 	var errs error
 
-	extensions, err := extension.MakeFactoryMap(
+	extensions, err := otelcol.MakeFactoryMap(
 		zpagesextension.NewFactory(),
 	)
 	errs = multierr.Append(errs, err)
 
-	receivers, err := receiver.MakeFactoryMap(
+	receivers, err := otelcol.MakeFactoryMap(
 		otlpreceiver.NewFactory(),
 	)
 	errs = multierr.Append(errs, err)
 
-	exporters, err := exporter.MakeFactoryMap(
+	exporters, err := otelcol.MakeFactoryMap(
 		debugexporter.NewFactory(),
 		otlpexporter.NewFactory(),
 		otlphttpexporter.NewFactory(),
 	)
 	errs = multierr.Append(errs, err)
 
-	processors, err := processor.MakeFactoryMap(
+	processors, err := otelcol.MakeFactoryMap[processor.Factory](
 		batchprocessor.NewFactory(),
 		memorylimiterprocessor.NewFactory(),
 	)
 	errs = multierr.Append(errs, err)
 
-	connectors, err := connector.MakeFactoryMap(
+	connectors, err := otelcol.MakeFactoryMap[connector.Factory](
 		forwardconnector.NewFactory(),
 	)
 	errs = multierr.Append(errs, err)
@@ -424,6 +425,7 @@ func CoreComponents() (
 		Processors: processors,
 		Exporters:  exporters,
 		Connectors: connectors,
+		Telemetry:  otelconftelemetry.NewFactory(),
 	}
 
 	return factories, errs

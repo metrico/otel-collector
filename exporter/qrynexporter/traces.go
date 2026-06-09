@@ -26,7 +26,6 @@ import (
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
 	"go.opentelemetry.io/otel/metric"
 	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -163,10 +162,10 @@ func (e *tracesExporter) exportSpans(
 
 func extractScopeTags(il pcommon.InstrumentationScope, tags map[string]string) {
 	if ilName := il.Name(); ilName != "" {
-		tags[conventions.OtelLibraryName] = ilName
+		tags[attrOTelLibraryName] = ilName
 	}
 	if ilVer := il.Version(); ilVer != "" {
-		tags[conventions.OtelLibraryVersion] = ilVer
+		tags[attrOTelLibraryVersion] = ilVer
 	}
 }
 
@@ -260,13 +259,13 @@ func resourceToServiceNameAndAttributeMap(resource pcommon.Resource) (string, ma
 
 func extractServiceName(tags map[string]string) string {
 	var serviceName string
-	if sn, ok := tags[conventions.AttributeServiceName]; ok {
+	if sn, ok := tags[attrServiceName]; ok {
 		serviceName = sn
-	} else if fn, ok := tags[conventions.AttributeFaaSName]; ok {
+	} else if fn, ok := tags[attrFaaSName]; ok {
 		serviceName = fn
-	} else if fn, ok := tags[conventions.AttributeK8SDeploymentName]; ok {
+	} else if fn, ok := tags[attrK8SDeploymentName]; ok {
 		serviceName = fn
-	} else if fn, ok := tags[conventions.AttributeProcessExecutableName]; ok {
+	} else if fn, ok := tags[attrProcessExecutableName]; ok {
 		serviceName = fn
 	} else {
 		serviceName = "OTLPResourceNoServiceName"
