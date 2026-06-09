@@ -188,7 +188,6 @@ require (
 	go.opentelemetry.io/collector/exporter/otlphttpexporter v0.108.1
 	go.opentelemetry.io/collector/extension v0.108.1
 	go.opentelemetry.io/collector/extension/zpagesextension v0.108.1
-	go.opentelemetry.io/collector/model v0.50.0
 	go.opentelemetry.io/collector/otelcol v0.108.1
 	go.opentelemetry.io/collector/pdata v1.14.1
 	go.opentelemetry.io/collector/processor v0.108.1
