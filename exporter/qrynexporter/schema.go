@@ -25,6 +25,19 @@ const (
 	SAMPLE_TYPE_METRIC    = 2
 )
 
+// OpenTelemetry semantic-convention attribute names used by this exporter,
+// inlined so the package does not depend on an external semconv version.
+const (
+	attrServiceName           = "service.name"
+	attrServiceNamespace      = "service.namespace"
+	attrServiceInstanceID     = "service.instance.id"
+	attrOTelLibraryName       = "otel.library.name"
+	attrOTelLibraryVersion    = "otel.library.version"
+	attrFaaSName              = "faas.name"
+	attrK8SDeploymentName     = "k8s.deployment.name"
+	attrProcessExecutableName = "process.executable.name"
+)
+
 var (
 	tracesInputSQL = func(_ bool) string {
 		return `INSERT INTO traces_input (

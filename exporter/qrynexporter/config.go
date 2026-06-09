@@ -16,6 +16,7 @@ package qrynexporter
 
 import (
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configoptional"
 	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
@@ -27,9 +28,9 @@ const (
 
 // Config defines configuration for logging exporter.
 type Config struct {
-	exporterhelper.TimeoutSettings `mapstructure:",squash"`
-	configretry.BackOffConfig      `mapstructure:"retry_on_failure"`
-	exporterhelper.QueueSettings   `mapstructure:"sending_queue"`
+	exporterhelper.TimeoutConfig `mapstructure:",squash"`
+	configretry.BackOffConfig    `mapstructure:"retry_on_failure"`
+	QueueConfig                  configoptional.Optional[exporterhelper.QueueBatchConfig] `mapstructure:"sending_queue"`
 
 	// ClientSideTraceProcessing is a boolean that indicates whether to process traces on the client side.
 	ClientSideTraceProcessing bool `mapstructure:"client_side_trace_processing"`

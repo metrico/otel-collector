@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configoptional"
 	"go.opentelemetry.io/collector/config/configretry"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
@@ -18,10 +19,10 @@ const (
 
 func createDefaultConfig() component.Config {
 	return &Config{
-		TimeoutSettings: exporterhelper.NewDefaultTimeoutSettings(),
-		QueueSettings:   exporterhelper.NewDefaultQueueSettings(),
-		BackOffConfig:   configretry.NewDefaultBackOffConfig(),
-		Dsn:             defaultDsn,
+		TimeoutConfig: exporterhelper.NewDefaultTimeoutConfig(),
+		QueueConfig:   configoptional.Some(exporterhelper.NewDefaultQueueConfig()),
+		BackOffConfig: configretry.NewDefaultBackOffConfig(),
+		Dsn:           defaultDsn,
 	}
 }
 
@@ -31,14 +32,14 @@ func createLogsExporter(ctx context.Context, set exporter.Settings, cfg componen
 	if err != nil {
 		return nil, fmt.Errorf("cannot init clickhouse profile exporter: %w", err)
 	}
-	return exporterhelper.NewLogsExporter(
+	return exporterhelper.NewLogs(
 		ctx,
 		set,
 		cfg,
 		exp.send,
 		exporterhelper.WithShutdown(exp.Shutdown),
-		exporterhelper.WithQueue(c.QueueSettings),
-		exporterhelper.WithTimeout(c.TimeoutSettings),
+		exporterhelper.WithQueue(c.QueueConfig),
+		exporterhelper.WithTimeout(c.TimeoutConfig),
 		exporterhelper.WithRetry(c.BackOffConfig),
 	)
 }
