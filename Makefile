@@ -35,6 +35,15 @@ build:
 run:
 	go run cmd/otel-collector/*.go --config ${CONFIG_FILE}
 
+# Schema-validate the example config against the currently-built binary.
+# Catches config-schema regressions (renamed/removed YAML keys, missing
+# components) at every OTel-version bump. Run after each milestone.
+.PHONY: validate-config
+validate-config: build
+	@echo "Validating $(CONFIG_FILE)..."
+	@./otel-collector validate --config $(CONFIG_FILE)
+	@echo "OK"
+
 .PHONY: fmt
 fmt:
 	@echo Running go fmt on query service ...
