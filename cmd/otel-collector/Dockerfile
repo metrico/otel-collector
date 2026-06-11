@@ -1,14 +1,19 @@
-# Builder stage
-FROM golang:1.24.1-alpine as builder
+# Builder runs on $BUILDPLATFORM and cross-compiles for $TARGETPLATFORM
+# so multi-arch builds don't go through QEMU emulation.
+FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS builder
+ARG TARGETOS
+ARG TARGETARCH
+
 RUN apk --update add ca-certificates
 
 WORKDIR /src
 COPY . .
 
-ENV OS111MODULE=on
 ENV CGO_ENABLED=0
 
-RUN cd cmd/otel-collector && go build -tags timetzdata -o /out/otel-collector
+WORKDIR /src/cmd/otel-collector
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -tags timetzdata -o /out/otel-collector
 
 # Final stage
 FROM scratch

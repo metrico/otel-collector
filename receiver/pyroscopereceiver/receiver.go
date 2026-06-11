@@ -101,7 +101,7 @@ type params struct {
 	start  uint64
 	end    uint64
 	name   string
-	labels labels.Labels
+	labels []labels.Label
 }
 
 func newPyroscopeReceiver(cfg *Config, consumer consumer.Logs, set *receiver.Settings) (*pyroscopeReceiver, error) {
@@ -611,9 +611,9 @@ func (r *pyroscopeReceiver) Start(ctx context.Context, host component.Host) erro
 	r.host = host
 	var err error
 
-	if r.cfg.Protocols.HTTP.Endpoint != "" {
+	if r.cfg.Protocols.HTTP.NetAddr.Endpoint != "" {
 		// applies an interceptor that enforces the configured request body limit
-		if r.httpServer, err = r.cfg.Protocols.HTTP.ToServer(ctx, host, r.setting.TelemetrySettings, r.mux); err != nil {
+		if r.httpServer, err = r.cfg.Protocols.HTTP.ToServer(ctx, host.GetExtensions(), r.setting.TelemetrySettings, r.mux); err != nil {
 			return fmt.Errorf("failed to create http server: %w", err)
 		}
 
@@ -623,7 +623,7 @@ func (r *pyroscopeReceiver) Start(ctx context.Context, host component.Host) erro
 		}
 		pushv1connect.RegisterPusherServiceHandler(r.mux, r)
 		r.shutdownWg.Add(1)
-		r.setting.Logger.Info("Starting HTTP server", zap.String("endpoint", r.cfg.Protocols.HTTP.Endpoint))
+		r.setting.Logger.Info("Starting HTTP server", zap.String("endpoint", r.cfg.Protocols.HTTP.NetAddr.Endpoint))
 		go func() {
 			defer r.shutdownWg.Done()
 			if err := r.httpServer.Serve(l); !errors.Is(err, http.ErrServerClosed) && err != nil {

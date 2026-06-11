@@ -8,7 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configoptional"
 	"go.opentelemetry.io/collector/config/configretry"
+	"go.opentelemetry.io/collector/confmap"
 	"go.opentelemetry.io/collector/confmap/confmaptest"
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
@@ -35,7 +37,7 @@ func TestLoadConfig(t *testing.T) {
 			expected: &Config{
 				DSN:              defaultDSN,
 				TracePayloadType: defaultTracePayloadType,
-				TimeoutSettings: exporterhelper.TimeoutSettings{
+				TimeoutConfig: exporterhelper.TimeoutConfig{
 					Timeout: 5 * time.Second,
 				},
 				BackOffConfig: configretry.BackOffConfig{
@@ -46,12 +48,11 @@ func TestLoadConfig(t *testing.T) {
 					RandomizationFactor: 0.5,
 					Multiplier:          1.5,
 				},
-				QueueSettings: exporterhelper.QueueSettings{
-					Enabled:      true,
-					QueueSize:    100,
-					NumConsumers: 10,
-					StorageID:    nil,
-				},
+				QueueConfig: configoptional.Some(func() exporterhelper.QueueBatchConfig {
+					qc := exporterhelper.NewDefaultQueueConfig()
+					qc.QueueSize = 100
+					return qc
+				}()),
 			},
 		},
 	}
@@ -65,7 +66,7 @@ func TestLoadConfig(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, sub.Unmarshal(cfg))
 
-			assert.NoError(t, component.ValidateConfig(cfg))
+			assert.NoError(t, confmap.Validate(cfg))
 			assert.Equal(t, tt.expected, cfg)
 		})
 	}
