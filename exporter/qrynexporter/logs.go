@@ -75,13 +75,22 @@ func (e *logsExporter) Shutdown(_ context.Context) error {
 	return nil
 }
 
-func hasLokiHint(attrs pcommon.Map) bool {
-	for _, hint := range []string{hintAttributes, hintResources, hintTenant} {
-		if _, ok := attrs.Get(hint); ok {
-			return true
-		}
+func hasResourceLabelsHint(logAttrs, resAttrs pcommon.Map) bool {
+	_, found := resAttrs.Get(hintResources)
+	if found {
+		return true
 	}
-	return false
+	_, found = logAttrs.Get(hintResources)
+	return found
+}
+
+func hasAttributeLabelsHint(logAttrs pcommon.Map) bool {
+	_, found := logAttrs.Get(hintAttributes)
+	return found
+}
+
+func isLokiHintKey(k string) bool {
+	return k == hintAttributes || k == hintResources || k == hintTenant || k == hintFormat
 }
 
 func (e *logsExporter) convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs pcommon.Map) model.LabelSet {
@@ -117,19 +126,21 @@ func (e *logsExporter) convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs 
 	}
 
 	if e.attributeLabels != "" {
-		labels := convertSelectedAttributesToLabels(logAttrs, pcommon.NewValueStr(e.resourceLabels))
+		labels := convertSelectedAttributesToLabels(logAttrs, pcommon.NewValueStr(e.attributeLabels))
 		out = out.Merge(labels)
 	}
 
 	if e.resourceLabels != "" {
-		labels := convertSelectedAttributesToLabels(resAttrs, pcommon.NewValueStr(e.attributeLabels))
+		labels := convertSelectedAttributesToLabels(resAttrs, pcommon.NewValueStr(e.resourceLabels))
 		out = out.Merge(labels)
 	}
 
-	// if no any hint found, just mergedLabels
-	if !hasLokiHint(logAttrs) && !hasLokiHint(resAttrs) {
-		out = out.Merge(convertAttributesToLabels(logAttrs))
+	// Hints opt in to specific labels; unset hints keep the default of exporting all attrs.
+	if !hasResourceLabelsHint(logAttrs, resAttrs) {
 		out = out.Merge(convertAttributesToLabels(resAttrs))
+	}
+	if !hasAttributeLabelsHint(logAttrs) {
+		out = out.Merge(convertAttributesToLabels(logAttrs))
 	}
 	return out
 }
@@ -489,6 +500,9 @@ func convertAttributesToLabels(attributes pcommon.Map) model.LabelSet {
 	ls := model.LabelSet{}
 
 	attributes.Range(func(k string, v pcommon.Value) bool {
+		if isLokiHintKey(k) {
+			return true
+		}
 		ls[model.LabelName(k)] = model.LabelValue(v.AsString())
 		return true
 	})
@@ -500,10 +514,14 @@ func addLogLevelAttributeAndHint(log plog.LogRecord) {
 	if log.SeverityNumber() == plog.SeverityNumberUnspecified {
 		return
 	}
-	addLogLevelHit(log)
 	if _, found := log.Attributes().Get(levelAttributeName); !found {
 		level := severityNumberToLevel[log.SeverityNumber().String()]
 		log.Attributes().PutStr(levelAttributeName, level)
+	}
+	// Only extend an existing sender hint; do not inject loki.attribute.labels=level
+	// or resource attrs would be excluded from the default label merge.
+	if _, found := log.Attributes().Get(hintAttributes); found {
+		addLogLevelHit(log)
 	}
 }
 
