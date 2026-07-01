@@ -3,8 +3,10 @@ on:
   push:
     branches:
       - main
+      - beta
     paths-ignore:
       - '**.md'
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -41,6 +43,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - id: beta_suffix
+        name: Set beta suffix for non-main branches
+        run: |
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "BETA_SUFFIX=-beta" >> $GITHUB_ENV
+          else
+            echo "BETA_SUFFIX=" >> $GITHUB_ENV
+          fi
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v4.1.1
@@ -48,7 +59,7 @@ jobs:
           images: |
             ghcr.io/metrico/qryn-otel-collector
           tags: |
-            latest
+            latest${{ env.BETA_SUFFIX }}
             ${{ needs.tag_bump.outputs.new_tag }}
 
       - name: Build and push multi-arch image
