@@ -1,10 +1,10 @@
-# qryn Exporter
+# Gigapipe Exporter
 
 | Status                   |                       |
 | ------------------------ |-----------------------|
 | Stability                | [alpha]               |
 | Supported pipeline types | traces, logs, metrics |
-| Distributions            | [qryn]                |
+| Distributions            | [Gigapipe]            |
 
 
 # Configuration options:

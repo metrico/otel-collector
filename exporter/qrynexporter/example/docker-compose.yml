@@ -78,7 +78,7 @@ services:
       clickhouse-server:
         condition: service_healthy
   qryn:
-    image: qxip/qryn:latest
+    image: ghcr.io/metrico/gigapipe:latest
     platform: linux/amd64
     container_name: qryn
     restart: unless-stopped

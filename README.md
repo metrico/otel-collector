@@ -1,12 +1,12 @@
-<a href="https://qryn.dev" target="_blank"><img src='https://user-images.githubusercontent.com/1423657/218816262-e0e8d7ad-44d0-4a7d-9497-0d383ed78b83.png' width=250></a>
+<a href="https://gigapipe.com/" target="_blank"><img src='https://github.com/user-attachments/assets/fc8c7ca9-7a18-403d-b2a6-17899a534d33' style="margin-left:-10px;width:200px;" height=200></a>
 
-# qryn-otel-collector
+# gigapipe-otel-collector
 
-Open Telemetry distribution for [qryn](https://qryn.dev)
+Open Telemetry distribution for [Gigapipe](https://gigapipe.com/)
 
 
 ### About
-The **qryn-otel-collector** is designed to store observability data _(Traces, Logs, Metrics)_ from multiple vendors/platforms into [ClickHouse](https://github.com/clickhouse/clicklhouse) using [qryn](https://github.com/metrico/qryn) _fingerprinting and table formats_ transparently accessible through [qryn](https://qryn.dev) via _LogQL, PromQL, Tempo and Pyroscope queries_.
+The **gigapipe-otel-collector** is designed to store observability data _(Traces, Logs, Metrics)_ from multiple vendors/platforms into [ClickHouse](https://github.com/clickhouse/clicklhouse) using [Gigapipe](https://github.com/metrico/gigapipe) _fingerprinting and table formats_ transparently accessible through [Gigapipe](https://gigapipe.com/) via _LogQL, PromQL, Tempo and Pyroscope queries_.
 
 <img src="https://github.com/metrico/otel-collector/assets/1423657/692b54e9-88ef-49c8-996d-5dbd73ee0782" height=250>
 
@@ -35,7 +35,7 @@ The **qryn-otel-collector** is designed to store observability data _(Traces, Lo
 ```yaml
 otel-collector:
     container_name: otel-collector
-    image: ghcr.io/metrico/qryn-otel-collector:latest
+    image: ghcr.io/metrico/gigapipe-otel-collector:latest
     volumes:
       - ./otel-collector-config.yaml:/etc/otel/config.yaml
     ports:
@@ -58,7 +58,7 @@ otel-collector:
 ```
 
 ### Config Template [view](https://www.otelbin.io/s/55bd7b91-0c89-47d4-b84c-015ad2a76790)
-The following template enables popular log, metric and tracing ingestion formats supported by qryn
+The following template enables popular log, metric and tracing ingestion formats supported by Gigapipe
 
 ```yaml
 receivers:

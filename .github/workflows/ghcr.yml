@@ -46,7 +46,7 @@ jobs:
         uses: docker/metadata-action@v4.1.1
         with:
           images: |
-            ghcr.io/metrico/qryn-otel-collector
+            ghcr.io/metrico/gigapipe-otel-collector
           tags: |
             latest
             ${{ needs.tag_bump.outputs.new_tag }}
