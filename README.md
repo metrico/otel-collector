@@ -2,7 +2,7 @@
 
 # gigapipe-otel-collector
 
-Open Telemetry distribution for [Gigapipe](https://gigapipe.com/)
+Open Telemetry distribution for [Gigapipe](https://gigapipe.com/) > formerly known as _qryn_
 
 
 ### About
