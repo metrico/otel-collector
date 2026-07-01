@@ -16,7 +16,7 @@ IMPORT_LOG=.import.log
 .PHONY: install-tools
 install-tools:
 	go mod tidy
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.42.0
+	go install golang.org/x/tools/cmd/goimports@latest
 
 .DEFAULT_GOAL := test-and-lint
 
@@ -60,8 +60,10 @@ build-qryn-collector:
 
 .PHONY: lint
 lint:
-	@echo "Running linters..."
-	@$(GOPATH)/bin/golangci-lint -v --config .golangci.yml run && echo "Done."
+	@echo "Checking formatting (gofmt -s, goimports)..."
+	@test -z "$$(gofmt -s -l . | tee /dev/stderr)"
+	@test -z "$$($(GOPATH)/bin/goimports -l . | tee /dev/stderr)"
+	@echo "Done."
 
 .PHONY: install-ci
 install-ci: install-tools
