@@ -454,7 +454,9 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 }
 
 func batchSamplesAndTimeSeries(ctx context.Context, db clickhouse.Conn, samples []Sample, timeSeries []TimeSerie) error {
-	isCluster := ctx.Value(clusterKey).(bool)
+	// Fall back to non-clustered if the context is missing the cluster flag,
+	// rather than panicking on a nil type assertion (see #109).
+	isCluster, _ := ctx.Value(clusterKey).(bool)
 	samplesBatch, err := db.PrepareBatch(ctx, samplesSQL(isCluster))
 	if err != nil {
 		return err

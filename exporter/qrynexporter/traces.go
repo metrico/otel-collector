@@ -170,7 +170,9 @@ func extractScopeTags(il pcommon.InstrumentationScope, tags map[string]string) {
 }
 
 func (e *tracesExporter) exportResourceSapns(ctx context.Context, resourceSpans ptrace.ResourceSpansSlice) error {
-	isCluster := ctx.Value(clusterKey).(bool)
+	// Fall back to non-clustered if the context is missing the cluster flag,
+	// rather than panicking on a nil type assertion (see #109).
+	isCluster, _ := ctx.Value(clusterKey).(bool)
 	var batch driver.Batch
 	var err error
 	if e.clientSide {
