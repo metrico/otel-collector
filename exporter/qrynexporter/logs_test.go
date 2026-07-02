@@ -81,6 +81,52 @@ func TestConvertAttributesAndMerge_RespectsAttributeLabelsHint(t *testing.T) {
 	assert.Equal(t, model.LabelValue("otel-deployment"), labels["signoz.component"])
 }
 
+func TestConvertAttributesAndMerge_AttributeLabelsConfigOptsOutOfDefault(t *testing.T) {
+	exp := &logsExporter{attributeLabels: "k8s.event.reason"}
+
+	logAttrs := pcommon.NewMap()
+	logAttrs.PutStr("k8s.namespace.name", "devnet")
+	logAttrs.PutStr("k8s.event.reason", "Unhealthy")
+
+	resAttrs := pcommon.NewMap()
+	resAttrs.PutStr("signoz.component", "otel-deployment")
+
+	log := newLogRecord(plog.SeverityNumberWarn)
+	logAttrs.CopyTo(log.Attributes())
+	addLogLevelAttributeAndHint(log)
+
+	labels := exp.convertAttributesAndMerge(log.Attributes(), resAttrs)
+
+	// Only the configured log attr is promoted; the rest are not.
+	assert.Equal(t, model.LabelValue("Unhealthy"), labels["k8s.event.reason"])
+	assert.NotContains(t, labels, "k8s.namespace.name")
+	// Resource attrs keep the default all-attrs export.
+	assert.Equal(t, model.LabelValue("otel-deployment"), labels["signoz.component"])
+}
+
+func TestConvertAttributesAndMerge_ResourceLabelsConfigOptsOutOfDefault(t *testing.T) {
+	exp := &logsExporter{resourceLabels: "signoz.component"}
+
+	logAttrs := pcommon.NewMap()
+	logAttrs.PutStr("k8s.namespace.name", "devnet")
+
+	resAttrs := pcommon.NewMap()
+	resAttrs.PutStr("signoz.component", "otel-deployment")
+	resAttrs.PutStr("k8s.object.kind", "Pod")
+
+	log := newLogRecord(plog.SeverityNumberWarn)
+	logAttrs.CopyTo(log.Attributes())
+	addLogLevelAttributeAndHint(log)
+
+	labels := exp.convertAttributesAndMerge(log.Attributes(), resAttrs)
+
+	// Only the configured resource attr is promoted; the rest are not.
+	assert.Equal(t, model.LabelValue("otel-deployment"), labels["signoz.component"])
+	assert.NotContains(t, labels, "k8s.object.kind")
+	// Log attrs keep the default all-attrs export.
+	assert.Equal(t, model.LabelValue("devnet"), labels["k8s.namespace.name"])
+}
+
 func TestAddLogLevelAttributeAndHint_AppendsToExistingHint(t *testing.T) {
 	log := newLogRecord(plog.SeverityNumberWarn)
 	log.Attributes().PutStr(hintAttributes, "k8s.event.reason")

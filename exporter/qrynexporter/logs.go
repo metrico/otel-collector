@@ -135,11 +135,14 @@ func (e *logsExporter) convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs 
 		out = out.Merge(labels)
 	}
 
-	// Hints opt in to specific labels; unset hints keep the default of exporting all attrs.
-	if !hasResourceLabelsHint(logAttrs, resAttrs) {
+	// Selecting specific labels opts out of the default all-attrs export.
+	// A payload hint (loki.resource.labels / loki.attribute.labels) or the
+	// exporter config (resource_labels / attribute_labels) counts as an opt-in
+	// to specific labels; when neither is set, the default exports all attrs.
+	if !hasResourceLabelsHint(logAttrs, resAttrs) && e.resourceLabels == "" {
 		out = out.Merge(convertAttributesToLabels(resAttrs))
 	}
-	if !hasAttributeLabelsHint(logAttrs) {
+	if !hasAttributeLabelsHint(logAttrs) && e.attributeLabels == "" {
 		out = out.Merge(convertAttributesToLabels(logAttrs))
 	}
 	return out
