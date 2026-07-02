@@ -436,5 +436,12 @@ func readTreeFromMap(m pcommon.Map) (*PooledTree, error) {
 		res.data[i][1] = fnId
 		res.data[i][2] = nodeId
 	}
+
+	// An empty tree (treeSize <= 0) leaves res nil. Return a valid pooled tree
+	// with no rows instead, so callers can append res.data and release res via
+	// trees.put without a nil-pointer dereference (see #142).
+	if res == nil {
+		res = trees.get(0, 0)
+	}
 	return res, nil
 }
