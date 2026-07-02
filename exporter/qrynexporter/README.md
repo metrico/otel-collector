@@ -27,6 +27,12 @@
   - Description: Specifies the format of trace data sent to ClickHouse. Please use `json` for compatibility with qryn up to 3.2.39. 
 For "Gigapipe" readers please use `proto`.
 
+- `logs` (optional): controls how log attributes become stream labels. See [Logs: attributes vs. labels](docs/logs-labels.md).
+  - `logs.attribute_labels` (optional, string): comma-separated **log-record** attribute names to promote to labels.
+  - `logs.resource_labels` (optional, string): comma-separated **resource** attribute names to promote to labels.
+  - `logs.promote_all_attributes` (optional, bool, default `false`): when `true`, promote **every** log-record attribute to a label. Leave `false` to avoid unbounded label cardinality; only `level` and the attributes you name are promoted.
+  - `logs.format` (optional, string): body format (`raw`, `json`, `logfmt`).
+
 
 # Example:
 ## Simple Trace Data

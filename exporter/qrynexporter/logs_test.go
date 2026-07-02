@@ -10,8 +10,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-func TestConvertAttributesAndMerge_DefaultIncludesAllAttrs(t *testing.T) {
-	exp := &logsExporter{}
+func TestConvertAttributesAndMerge_DefaultPromotesLevelAndResourcesOnly(t *testing.T) {
+	exp := &logsExporter{} // promoteAllAttributes defaults to false
 
 	logAttrs := pcommon.NewMap()
 	logAttrs.PutStr("k8s.namespace.name", "devnet")
@@ -21,15 +21,40 @@ func TestConvertAttributesAndMerge_DefaultIncludesAllAttrs(t *testing.T) {
 	resAttrs.PutStr("signoz.component", "otel-deployment")
 	resAttrs.PutStr("k8s.object.kind", "Pod")
 
-	addLogLevelAttributeAndHint(newLogRecord(plog.SeverityNumberWarn))
-
-	// Re-copy attrs after addLogLevelAttributeAndHint for a realistic flow.
 	log := newLogRecord(plog.SeverityNumberWarn)
 	logAttrs.CopyTo(log.Attributes())
 	addLogLevelAttributeAndHint(log)
 
 	labels := exp.convertAttributesAndMerge(log.Attributes(), resAttrs)
 
+	// level is always promoted.
+	assert.Equal(t, model.LabelValue("WARN"), labels["level"])
+	// Resource attrs are promoted by default (low cardinality).
+	assert.Equal(t, model.LabelValue("otel-deployment"), labels["signoz.component"])
+	assert.Equal(t, model.LabelValue("Pod"), labels["k8s.object.kind"])
+	// Log attrs are NOT promoted by default (cardinality guard).
+	assert.NotContains(t, labels, "k8s.namespace.name")
+	assert.NotContains(t, labels, "k8s.event.reason")
+}
+
+func TestConvertAttributesAndMerge_PromoteAllAttributesPromotesLogAttrs(t *testing.T) {
+	exp := &logsExporter{promoteAllAttributes: true}
+
+	logAttrs := pcommon.NewMap()
+	logAttrs.PutStr("k8s.namespace.name", "devnet")
+	logAttrs.PutStr("k8s.event.reason", "Unhealthy")
+
+	resAttrs := pcommon.NewMap()
+	resAttrs.PutStr("signoz.component", "otel-deployment")
+	resAttrs.PutStr("k8s.object.kind", "Pod")
+
+	log := newLogRecord(plog.SeverityNumberWarn)
+	logAttrs.CopyTo(log.Attributes())
+	addLogLevelAttributeAndHint(log)
+
+	labels := exp.convertAttributesAndMerge(log.Attributes(), resAttrs)
+
+	// With the flag on, every attribute becomes a label.
 	assert.Equal(t, model.LabelValue("WARN"), labels["level"])
 	assert.Equal(t, model.LabelValue("devnet"), labels["k8s.namespace.name"])
 	assert.Equal(t, model.LabelValue("Unhealthy"), labels["k8s.event.reason"])
@@ -56,7 +81,8 @@ func TestConvertAttributesAndMerge_RespectsResourceLabelsHint(t *testing.T) {
 
 	assert.Equal(t, model.LabelValue("otel-deployment"), labels["signoz.component"])
 	assert.NotContains(t, labels, "k8s.object.kind")
-	assert.Equal(t, model.LabelValue("devnet"), labels["k8s.namespace.name"])
+	// Log attrs are not promoted by default.
+	assert.NotContains(t, labels, "k8s.namespace.name")
 }
 
 func TestConvertAttributesAndMerge_RespectsAttributeLabelsHint(t *testing.T) {
@@ -79,6 +105,52 @@ func TestConvertAttributesAndMerge_RespectsAttributeLabelsHint(t *testing.T) {
 	assert.Equal(t, model.LabelValue("Unhealthy"), labels["k8s.event.reason"])
 	assert.NotContains(t, labels, "k8s.namespace.name")
 	assert.Equal(t, model.LabelValue("otel-deployment"), labels["signoz.component"])
+}
+
+func TestConvertAttributesAndMerge_AttributeLabelsConfigOptsOutOfDefault(t *testing.T) {
+	exp := &logsExporter{attributeLabels: "k8s.event.reason"}
+
+	logAttrs := pcommon.NewMap()
+	logAttrs.PutStr("k8s.namespace.name", "devnet")
+	logAttrs.PutStr("k8s.event.reason", "Unhealthy")
+
+	resAttrs := pcommon.NewMap()
+	resAttrs.PutStr("signoz.component", "otel-deployment")
+
+	log := newLogRecord(plog.SeverityNumberWarn)
+	logAttrs.CopyTo(log.Attributes())
+	addLogLevelAttributeAndHint(log)
+
+	labels := exp.convertAttributesAndMerge(log.Attributes(), resAttrs)
+
+	// Only the configured log attr is promoted; the rest are not.
+	assert.Equal(t, model.LabelValue("Unhealthy"), labels["k8s.event.reason"])
+	assert.NotContains(t, labels, "k8s.namespace.name")
+	// Resource attrs keep the default all-attrs export.
+	assert.Equal(t, model.LabelValue("otel-deployment"), labels["signoz.component"])
+}
+
+func TestConvertAttributesAndMerge_ResourceLabelsConfigOptsOutOfDefault(t *testing.T) {
+	exp := &logsExporter{resourceLabels: "signoz.component"}
+
+	logAttrs := pcommon.NewMap()
+	logAttrs.PutStr("k8s.namespace.name", "devnet")
+
+	resAttrs := pcommon.NewMap()
+	resAttrs.PutStr("signoz.component", "otel-deployment")
+	resAttrs.PutStr("k8s.object.kind", "Pod")
+
+	log := newLogRecord(plog.SeverityNumberWarn)
+	logAttrs.CopyTo(log.Attributes())
+	addLogLevelAttributeAndHint(log)
+
+	labels := exp.convertAttributesAndMerge(log.Attributes(), resAttrs)
+
+	// Only the configured resource attr is promoted; the rest are not.
+	assert.Equal(t, model.LabelValue("otel-deployment"), labels["signoz.component"])
+	assert.NotContains(t, labels, "k8s.object.kind")
+	// Log attrs are not promoted by default.
+	assert.NotContains(t, labels, "k8s.namespace.name")
 }
 
 func TestAddLogLevelAttributeAndHint_AppendsToExistingHint(t *testing.T) {
