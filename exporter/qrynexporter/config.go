@@ -60,6 +60,13 @@ type LogsConfig struct {
 	ResourceLabels string `mapstructure:"resource_labels"`
 	// Format is the string representing the format.
 	Format string `mapstructure:"format"`
+	// PromoteAllAttributes controls the default promotion of log-record
+	// attributes to stream labels. When false (default), only the level
+	// label plus attributes named via attribute_labels or the
+	// loki.attribute.labels hint are promoted, keeping label cardinality
+	// bounded. When true, every log-record attribute becomes a label.
+	// Resource attributes are unaffected by this flag.
+	PromoteAllAttributes bool `mapstructure:"promote_all_attributes"`
 }
 
 // MetricsConfig holds the configuration for metric data.

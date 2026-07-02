@@ -36,10 +36,11 @@ type logsExporter struct {
 
 	db clickhouse.Conn
 
-	attributeLabels string
-	resourceLabels  string
-	format          string
-	cluster         bool
+	attributeLabels      string
+	resourceLabels       string
+	promoteAllAttributes bool
+	format               string
+	cluster              bool
 }
 
 func newLogsExporter(logger *zap.Logger, cfg *Config, set *exporter.Settings) (*logsExporter, error) {
@@ -52,13 +53,14 @@ func newLogsExporter(logger *zap.Logger, cfg *Config, set *exporter.Settings) (*
 		return nil, err
 	}
 	exp := &logsExporter{
-		logger:          logger,
-		meter:           set.MeterProvider.Meter(typeStr),
-		db:              db,
-		format:          cfg.Logs.Format,
-		attributeLabels: cfg.Logs.AttributeLabels,
-		resourceLabels:  cfg.Logs.ResourceLabels,
-		cluster:         cfg.ClusteredClickhouse,
+		logger:               logger,
+		meter:                set.MeterProvider.Meter(typeStr),
+		db:                   db,
+		format:               cfg.Logs.Format,
+		attributeLabels:      cfg.Logs.AttributeLabels,
+		resourceLabels:       cfg.Logs.ResourceLabels,
+		promoteAllAttributes: cfg.Logs.PromoteAllAttributes,
+		cluster:              cfg.ClusteredClickhouse,
 	}
 	if err := initMetrics(exp.meter); err != nil {
 		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
@@ -81,11 +83,6 @@ func hasResourceLabelsHint(logAttrs, resAttrs pcommon.Map) bool {
 		return true
 	}
 	_, found = logAttrs.Get(hintResources)
-	return found
-}
-
-func hasAttributeLabelsHint(logAttrs pcommon.Map) bool {
-	_, found := logAttrs.Get(hintAttributes)
 	return found
 }
 
@@ -135,15 +132,26 @@ func (e *logsExporter) convertAttributesAndMerge(logAttrs pcommon.Map, resAttrs 
 		out = out.Merge(labels)
 	}
 
-	// Selecting specific labels opts out of the default all-attrs export.
-	// A payload hint (loki.resource.labels / loki.attribute.labels) or the
-	// exporter config (resource_labels / attribute_labels) counts as an opt-in
-	// to specific labels; when neither is set, the default exports all attrs.
+	// Resource attributes are low-cardinality (one set per source), so they are
+	// promoted by default. Selecting specific labels via the loki.resource.labels
+	// hint or the resource_labels config opts out of that default.
 	if !hasResourceLabelsHint(logAttrs, resAttrs) && e.resourceLabels == "" {
 		out = out.Merge(convertAttributesToLabels(resAttrs))
 	}
-	if !hasAttributeLabelsHint(logAttrs) && e.attributeLabels == "" {
+
+	// Log-record attributes are per-event and can be high-cardinality. Labels
+	// named via the loki.attribute.labels hint or the attribute_labels config
+	// are already promoted above. Promoting *all* log attributes is opt-in via
+	// promote_all_attributes; the flag only gates that blanket export and never
+	// blocks explicitly selected labels.
+	if e.promoteAllAttributes {
 		out = out.Merge(convertAttributesToLabels(logAttrs))
+	}
+
+	// The level label is always promoted, independent of promote_all_attributes,
+	// so severity stays queryable in the conservative default.
+	if level, found := logAttrs.Get(levelAttributeName); found {
+		out[model.LabelName(levelAttributeName)] = model.LabelValue(level.AsString())
 	}
 	return out
 }
