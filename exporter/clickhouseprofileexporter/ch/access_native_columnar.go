@@ -82,170 +82,238 @@ func (ch *clickhouseAccessNativeColumnar) InsertBatch(ls plog.Logs) (int, error)
 	}
 
 	// this implementation is tightly coupled to how pyroscope-java and pyroscopereceiver work
-	timestamp_ns := make([]uint64, 0)
-	typ := make([]string, 0)
-	service_name := make([]string, 0)
-	values_agg := make([][]tuple, 0)
-	sample_types_units := make([][]tuple, 0)
-	period_type := make([]string, 0)
-	period_unit := make([]string, 0)
-	tags := make([][]tuple, 0)
-	duration_ns := make([]uint64, 0)
-	payload_type := make([]string, 0)
-	payload := make([][]byte, 0)
-	tree := make([][]tuple, 0)
-	var pooledTrees []*PooledTree
-	functions := make([][]tuple, 0)
+	cols := &profileColumns{}
+	// Return pooled trees to the pool on every exit path (success or error).
+	defer cols.release()
 
 	rl := ls.ResourceLogs()
-	var (
-		lr     plog.LogRecordSlice
-		r      plog.LogRecord
-		m      pcommon.Map
-		tmp    pcommon.Value
-		tm     map[string]any
-		offset int
-		s      int
-		idx    int
-	)
 	for i := 0; i < rl.Len(); i++ {
-		lr = rl.At(i).ScopeLogs().At(0).LogRecords()
-		for s = 0; s < lr.Len(); s++ {
-			r = lr.At(s)
-			m = r.Attributes()
-			timestamp_ns = append(timestamp_ns, uint64(r.Timestamp()))
-
-			tmp, _ = m.Get(columnType)
-			typ = append(typ, tmp.AsString())
-
-			tmp, _ = m.Get(columnServiceName)
-			service_name = append(service_name, tmp.AsString())
-
-			sample_types, _ := m.Get("sample_types")
-			sample_units, _ := m.Get("sample_units")
-			sample_types_array, err := valueToStringArray(sample_types)
-			if err != nil {
-				return 0, err
-			}
-			sample_units_array, err := valueToStringArray(sample_units)
-			if err != nil {
-				return 0, err
-			}
-			values_agg_raw, ok := m.Get(columnValuesAgg)
-			if ok {
-				values_agg_tuple, err := valueAggToTuple(&values_agg_raw)
-				if err != nil {
+		sls := rl.At(i).ScopeLogs()
+		// Iterate every scope, not just the first, so records from additional
+		// instrumentation scopes are not silently dropped.
+		for si := 0; si < sls.Len(); si++ {
+			lr := sls.At(si).LogRecords()
+			for s := 0; s < lr.Len(); s++ {
+				if err := cols.appendRecord(lr.At(s)); err != nil {
 					return 0, err
 				}
-				values_agg = append(values_agg, values_agg_tuple)
+				idx := cols.rowCount() - 1
+				ch.logger.Debug(
+					fmt.Sprintf("batch insert prepared row %d", idx),
+					zap.Uint64(columnTimestampNs, cols.timestampNs[idx]),
+					zap.String(columnType, cols.typ[idx]),
+					zap.String(columnServiceName, cols.serviceName[idx]),
+					zap.String(columnPeriodType, cols.periodType[idx]),
+					zap.String(columnPeriodUnit, cols.periodUnit[idx]),
+					zap.Any(columnSampleTypesUnits, cols.sampleTypesUnits[idx]),
+					zap.String(columnPayloadType, cols.payloadType[idx]),
+				)
 			}
-			sample_types_units_item := make([]tuple, len(sample_types_array))
-			for i, v := range sample_types_array {
-				sample_types_units_item[i] = tuple{v, sample_units_array[i]}
-			}
-			sample_types_units = append(sample_types_units, sample_types_units_item)
-
-			tmp, _ = m.Get(columnPeriodType)
-			period_type = append(period_type, tmp.AsString())
-
-			tmp, _ = m.Get(columnPeriodUnit)
-			period_unit = append(period_unit, tmp.AsString())
-
-			tmp, _ = m.Get(columnTags)
-			tm = tmp.Map().AsRaw()
-			tag, j := make([]tuple, len(tm)), 0
-			for k, v := range tm {
-				tag[j] = tuple{k, v.(string)}
-				j++
-			}
-			tags = append(tags, tag)
-
-			tmp, _ = m.Get(columnDurationNs)
-			dur, _ := strconv.ParseUint(tmp.Str(), 10, 64)
-			duration_ns = append(duration_ns, dur)
-
-			tmp, _ = m.Get(columnPayloadType)
-			payload_type = append(payload_type, tmp.AsString())
-
-			payload = append(payload, r.Body().Bytes().AsRaw())
-
-			_functions, err := readFunctionsFromMap(m)
-			if err != nil {
-				return 0, err
-			}
-
-			functions = append(functions, _functions)
-
-			_tree, err := readTreeFromMap(m)
-			if err != nil {
-				return 0, err
-			}
-
-			pooledTrees = append(pooledTrees, _tree)
-			tree = append(tree, _tree.data)
-
-			idx = offset + s
-			ch.logger.Debug(
-				fmt.Sprintf("batch insert prepared row %d", idx),
-				zap.Uint64(columnTimestampNs, timestamp_ns[idx]),
-				zap.String(columnType, typ[idx]),
-				zap.String(columnServiceName, service_name[idx]),
-				zap.String(columnPeriodType, period_type[idx]),
-				zap.String(columnPeriodUnit, period_unit[idx]),
-				zap.Any(columnSampleTypesUnits, sample_types_units[idx]),
-				zap.String(columnPayloadType, payload_type[idx]),
-			)
 		}
-		offset += s
+	}
+
+	// The columnar insert requires every column to have the same length. Guard
+	// that invariant explicitly: a mismatch means a record skipped one of the
+	// appends, so fail with a clear error instead of a cryptic driver failure
+	// or silent data loss (see #120).
+	if err := cols.consistent(); err != nil {
+		return 0, fmt.Errorf("refusing to insert misaligned profile batch: %w", err)
 	}
 
 	// column order here should match table column order
-	if err := b.Column(0).Append(timestamp_ns); err != nil {
+	if err := b.Column(0).Append(cols.timestampNs); err != nil {
 		return 0, err
 	}
-	if err := b.Column(1).Append(typ); err != nil {
+	if err := b.Column(1).Append(cols.typ); err != nil {
 		return 0, err
 	}
-	if err := b.Column(2).Append(service_name); err != nil {
+	if err := b.Column(2).Append(cols.serviceName); err != nil {
 		return 0, err
 	}
-	if err := b.Column(3).Append(sample_types_units); err != nil {
+	if err := b.Column(3).Append(cols.sampleTypesUnits); err != nil {
 		return 0, err
 	}
-	if err := b.Column(4).Append(period_type); err != nil {
+	if err := b.Column(4).Append(cols.periodType); err != nil {
 		return 0, err
 	}
-	if err := b.Column(5).Append(period_unit); err != nil {
+	if err := b.Column(5).Append(cols.periodUnit); err != nil {
 		return 0, err
 	}
-	if err := b.Column(6).Append(tags); err != nil {
+	if err := b.Column(6).Append(cols.tags); err != nil {
 		return 0, err
 	}
-	if err := b.Column(7).Append(duration_ns); err != nil {
+	if err := b.Column(7).Append(cols.durationNs); err != nil {
 		return 0, err
 	}
-	if err := b.Column(8).Append(payload_type); err != nil {
-		return 0, err
-	}
-
-	if err := b.Column(9).Append(payload); err != nil {
-		return 0, err
-	}
-	if err := b.Column(10).Append(values_agg); err != nil {
+	if err := b.Column(8).Append(cols.payloadType); err != nil {
 		return 0, err
 	}
 
-	if err := b.Column(11).Append(tree); err != nil {
+	if err := b.Column(9).Append(cols.payload); err != nil {
 		return 0, err
 	}
-	if err := b.Column(12).Append(functions); err != nil {
+	if err := b.Column(10).Append(cols.valuesAgg); err != nil {
 		return 0, err
 	}
-	err = b.Send()
-	for _, tpls := range pooledTrees {
-		trees.put(tpls)
+
+	if err := b.Column(11).Append(cols.tree); err != nil {
+		return 0, err
 	}
-	return offset, err
+	if err := b.Column(12).Append(cols.functions); err != nil {
+		return 0, err
+	}
+	if err := b.Send(); err != nil {
+		return 0, err
+	}
+	return cols.rowCount(), nil
+}
+
+// profileColumns accumulates one profiles_input row per profile record across
+// all columns. The columnar ClickHouse insert requires every column slice to
+// have the same length, so appendRecord always appends exactly one element to
+// every column, and consistent() verifies the invariant before inserting.
+type profileColumns struct {
+	timestampNs      []uint64
+	typ              []string
+	serviceName      []string
+	sampleTypesUnits [][]tuple
+	periodType       []string
+	periodUnit       []string
+	tags             [][]tuple
+	durationNs       []uint64
+	payloadType      []string
+	payload          [][]byte
+	valuesAgg        [][]tuple
+	tree             [][]tuple
+	functions        [][]tuple
+	pooledTrees      []*PooledTree
+}
+
+// rowCount is the number of records appended so far.
+func (c *profileColumns) rowCount() int {
+	return len(c.timestampNs)
+}
+
+// appendRecord extracts one profile record into every column. It appends
+// exactly one element per column, tolerating optional/malformed fields rather
+// than desyncing the columns or panicking.
+func (c *profileColumns) appendRecord(r plog.LogRecord) error {
+	m := r.Attributes()
+	c.timestampNs = append(c.timestampNs, uint64(r.Timestamp()))
+
+	tmp, _ := m.Get(columnType)
+	c.typ = append(c.typ, tmp.AsString())
+
+	tmp, _ = m.Get(columnServiceName)
+	c.serviceName = append(c.serviceName, tmp.AsString())
+
+	sampleTypes, _ := m.Get("sample_types")
+	sampleUnits, _ := m.Get("sample_units")
+	sampleTypesArray, err := valueToStringArray(sampleTypes)
+	if err != nil {
+		return err
+	}
+	sampleUnitsArray, err := valueToStringArray(sampleUnits)
+	if err != nil {
+		return err
+	}
+	sampleTypesUnitsItem := make([]tuple, len(sampleTypesArray))
+	for n, v := range sampleTypesArray {
+		sampleTypesUnitsItem[n] = tuple{v, sampleUnitsArray[n]}
+	}
+	c.sampleTypesUnits = append(c.sampleTypesUnits, sampleTypesUnitsItem)
+
+	tmp, _ = m.Get(columnPeriodType)
+	c.periodType = append(c.periodType, tmp.AsString())
+
+	tmp, _ = m.Get(columnPeriodUnit)
+	c.periodUnit = append(c.periodUnit, tmp.AsString())
+
+	tmp, _ = m.Get(columnTags)
+	tm := tmp.Map().AsRaw()
+	tag, ti := make([]tuple, len(tm)), 0
+	for k, v := range tm {
+		// Tolerate non-string tag values instead of panicking on a failed
+		// type assertion.
+		sv, _ := v.(string)
+		tag[ti] = tuple{k, sv}
+		ti++
+	}
+	c.tags = append(c.tags, tag)
+
+	tmp, _ = m.Get(columnDurationNs)
+	dur, _ := strconv.ParseUint(tmp.Str(), 10, 64)
+	c.durationNs = append(c.durationNs, dur)
+
+	tmp, _ = m.Get(columnPayloadType)
+	c.payloadType = append(c.payloadType, tmp.AsString())
+
+	c.payload = append(c.payload, r.Body().Bytes().AsRaw())
+
+	// values_agg is optional on the record; append an empty entry when it is
+	// absent so the column stays aligned with the rest (this missing append was
+	// the root cause of #120).
+	if valuesAggRaw, ok := m.Get(columnValuesAgg); ok {
+		valuesAggTuple, err := valueAggToTuple(&valuesAggRaw)
+		if err != nil {
+			return err
+		}
+		c.valuesAgg = append(c.valuesAgg, valuesAggTuple)
+	} else {
+		c.valuesAgg = append(c.valuesAgg, []tuple{})
+	}
+
+	functions, err := readFunctionsFromMap(m)
+	if err != nil {
+		return err
+	}
+	c.functions = append(c.functions, functions)
+
+	t, err := readTreeFromMap(m)
+	if err != nil {
+		return err
+	}
+	c.pooledTrees = append(c.pooledTrees, t)
+	c.tree = append(c.tree, t.data)
+
+	return nil
+}
+
+// consistent verifies every column has exactly rowCount elements.
+func (c *profileColumns) consistent() error {
+	n := c.rowCount()
+	for _, col := range []struct {
+		name string
+		got  int
+	}{
+		{"type", len(c.typ)},
+		{"service_name", len(c.serviceName)},
+		{"sample_types_units", len(c.sampleTypesUnits)},
+		{"period_type", len(c.periodType)},
+		{"period_unit", len(c.periodUnit)},
+		{"tags", len(c.tags)},
+		{"duration_ns", len(c.durationNs)},
+		{"payload_type", len(c.payloadType)},
+		{"payload", len(c.payload)},
+		{"values_agg", len(c.valuesAgg)},
+		{"tree", len(c.tree)},
+		{"functions", len(c.functions)},
+	} {
+		if col.got != n {
+			return fmt.Errorf("column %q has length %d, expected %d", col.name, col.got, n)
+		}
+	}
+	return nil
+}
+
+// release returns the borrowed pooled trees to the pool so they can be reused.
+func (c *profileColumns) release() {
+	for _, t := range c.pooledTrees {
+		if t != nil {
+			trees.put(t)
+		}
+	}
+	c.pooledTrees = nil
 }
 
 // Closes the clickhouse connection pool
