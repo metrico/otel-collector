@@ -465,7 +465,7 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 		}
 	}
 
-	if err := batchSamplesAndTimeSeries(context.WithValue(ctx, clusterKey, e.cluster), e.db, samples, timeSeries); err != nil {
+	if err := batchSamplesAndTimeSeries(context.WithValue(ctx, clusterKey, e.cluster), e.logger, e.db, samples, timeSeries); err != nil {
 		otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError, dataTypeLogs)))
 		e.logger.Error(fmt.Sprintf("failed to insert batch: [%s]", err.Error()))
 		return err
@@ -475,8 +475,16 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 	return nil
 }
 
-func batchSamplesAndTimeSeries(ctx context.Context, db clickhouse.Conn, samples []Sample, timeSeries []TimeSerie) error {
-	isCluster := ctx.Value(clusterKey).(bool)
+func batchSamplesAndTimeSeries(ctx context.Context, logger *zap.Logger, db clickhouse.Conn, samples []Sample, timeSeries []TimeSerie) error {
+	// The caller injects the cluster flag via clusterKey. A missing flag can only
+	// mean a context-propagation bug (see #109). Degrading to non-clustered would
+	// steer inserts at the wrong schema and fail anyway, so treat it as a hard
+	// error: log it and abort the batch rather than panicking on a nil assertion.
+	isCluster, ok := ctx.Value(clusterKey).(bool)
+	if !ok {
+		logger.Error("cluster flag missing from context (context-propagation bug, see #109)")
+		return fmt.Errorf("cluster flag missing from context")
+	}
 	samplesBatch, err := db.PrepareBatch(ctx, samplesSQL(isCluster))
 	if err != nil {
 		return err
