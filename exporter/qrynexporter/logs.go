@@ -353,7 +353,7 @@ func convertLogToLine(log plog.LogRecord, res pcommon.Resource, format string) (
 			SpanID:     log.SpanID().String(),
 			Severity:   log.SeverityText(),
 			Attributes: log.Attributes().AsRaw(),
-			Resources:  log.Attributes().AsRaw(),
+			Resources:  res.Attributes().AsRaw(),
 		}
 		jsonRecord, err := json.Marshal(logRecord)
 		if err != nil {
@@ -472,12 +472,12 @@ func (e *logsExporter) buildSamplesAndTimeSeries(ld plog.Logs) ([]Sample, []Time
 				mergedLabels := e.convertAttributesAndMerge(log.Attributes(), rlogs.Resource().Attributes())
 				removeAttributes(log.Attributes(), mergedLabels)
 
-				// Only the logfmt line renders resource attributes, and it needs the
-				// label-promoted ones removed first. Deep-copy and prune the resource
-				// solely for that format; the raw (default) and json formats never
-				// read it, so skip the per-record copy entirely (see #92).
+				// The json and logfmt lines render resource attributes, and they
+				// need the label-promoted ones removed first. Deep-copy and prune the
+				// resource only for those formats; the raw (default) format never reads
+				// it, so skip the per-record copy entirely on the hot path (see #92).
 				resource := rlogs.Resource()
-				if format == formatLogfmt {
+				if format == formatLogfmt || format == formatJSON {
 					resource = pcommon.NewResource()
 					rlogs.Resource().CopyTo(resource)
 					removeAttributes(resource.Attributes(), mergedLabels)
