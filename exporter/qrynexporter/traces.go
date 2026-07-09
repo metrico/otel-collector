@@ -170,7 +170,15 @@ func extractScopeTags(il pcommon.InstrumentationScope, tags map[string]string) {
 }
 
 func (e *tracesExporter) exportResourceSapns(ctx context.Context, resourceSpans ptrace.ResourceSpansSlice) error {
-	isCluster := ctx.Value(clusterKey).(bool)
+	// The caller injects the cluster flag via clusterKey. A missing flag can only
+	// mean a context-propagation bug (see #109). Degrading to non-clustered would
+	// steer inserts at the wrong schema and fail anyway, so treat it as a hard
+	// error: log it and abort rather than panicking on a nil assertion.
+	isCluster, ok := ctx.Value(clusterKey).(bool)
+	if !ok {
+		e.logger.Error("cluster flag missing from context (context-propagation bug, see #109)")
+		return fmt.Errorf("cluster flag missing from context")
+	}
 	var batch driver.Batch
 	var err error
 	if e.clientSide {

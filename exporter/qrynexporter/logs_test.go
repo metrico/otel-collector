@@ -1,6 +1,7 @@
 package qrynexporter
 
 import (
+	"context"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -8,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.uber.org/zap"
 )
 
 func TestConvertAttributesAndMerge_DefaultPromotesLevelAndResourcesOnly(t *testing.T) {
@@ -173,6 +175,17 @@ func TestAddLogLevelAttributeAndHint_DoesNotInjectHint(t *testing.T) {
 	_, found := log.Attributes().Get(hintAttributes)
 	assert.False(t, found)
 	assert.Equal(t, "WARN", log.Attributes().AsRaw()["level"])
+}
+
+// A missing cluster flag is a context-propagation bug: the batch helper must log
+// and return an error rather than panicking on a nil type assertion (see #109).
+// The guard returns before the ClickHouse connection is touched, so a nil db is
+// fine.
+func TestBatchSamplesAndTimeSeries_MissingClusterFlagErrors(t *testing.T) {
+	err := batchSamplesAndTimeSeries(context.Background(), zap.NewNop(), nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected an error when the cluster flag is missing from context")
+	}
 }
 
 func newLogRecord(severity plog.SeverityNumber) plog.LogRecord {
