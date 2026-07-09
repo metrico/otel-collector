@@ -353,7 +353,7 @@ func convertLogToLine(log plog.LogRecord, res pcommon.Resource, format string) (
 			SpanID:     log.SpanID().String(),
 			Severity:   log.SeverityText(),
 			Attributes: log.Attributes().AsRaw(),
-			Resources:  log.Attributes().AsRaw(),
+			Resources:  res.Attributes().AsRaw(),
 		}
 		jsonRecord, err := json.Marshal(logRecord)
 		if err != nil {
@@ -424,45 +424,11 @@ func convertLogToTimeSerie(fingerprint model.Fingerprint, log plog.LogRecord, la
 func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 	start := time.Now()
 
-	var (
-		samples    []Sample
-		timeSeries []TimeSerie
-	)
-	for i := 0; i < ld.ResourceLogs().Len(); i++ {
-		logs := ld.ResourceLogs().At(i)
-		for j := 0; j < logs.ScopeLogs().Len(); j++ {
-			rs := logs.ScopeLogs().At(j).LogRecords()
-			for k := 0; k < rs.Len(); k++ {
-				resource := pcommon.NewResource()
-				logs.Resource().CopyTo(resource)
-				log := plog.NewLogRecord()
-				rs.At(k).CopyTo(log)
-
-				// adds level attribute from log.severityNumber
-				addLogLevelAttributeAndHint(log)
-
-				format := getFormatFromFormatHint(log.Attributes(), resource.Attributes())
-				if e.format != "" {
-					format = e.format
-				}
-				mergedLabels := e.convertAttributesAndMerge(log.Attributes(), resource.Attributes())
-				removeAttributes(log.Attributes(), mergedLabels)
-				removeAttributes(resource.Attributes(), mergedLabels)
-
-				fingerprint := mergedLabels.Fingerprint()
-				sample, err := convertLogToSample(fingerprint, log, resource, format)
-				if err != nil {
-					return fmt.Errorf("convertLogToSample error: %w", err)
-				}
-				samples = append(samples, sample)
-
-				timeSerie, err := convertLogToTimeSerie(fingerprint, log, mergedLabels)
-				if err != nil {
-					return fmt.Errorf("convertLogToTimeSerie error: %w", err)
-				}
-				timeSeries = append(timeSeries, timeSerie)
-			}
-		}
+	// Conversion of the OTLP batch into samples/time series is split out so it can
+	// be unit-tested and benchmarked without a ClickHouse connection.
+	samples, timeSeries, err := e.buildSamplesAndTimeSeries(ld)
+	if err != nil {
+		return err
 	}
 
 	if err := batchSamplesAndTimeSeries(context.WithValue(ctx, clusterKey, e.cluster), e.logger, e.db, samples, timeSeries); err != nil {
@@ -473,6 +439,66 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 	otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeSuccess, dataTypeLogs)))
 	e.logger.Debug("pushLogsData", zap.Int("samples", len(samples)), zap.Int("timeseries", len(timeSeries)), zap.String("cost", time.Since(start).String()))
 	return nil
+}
+
+// buildSamplesAndTimeSeries converts an OTLP log batch into Gigapipe samples and
+// time series. It is separated from the insert so it can be tested and
+// benchmarked without a ClickHouse connection.
+func (e *logsExporter) buildSamplesAndTimeSeries(ld plog.Logs) ([]Sample, []TimeSerie, error) {
+	var (
+		samples    []Sample
+		timeSeries []TimeSerie
+	)
+	for i := 0; i < ld.ResourceLogs().Len(); i++ {
+		rlogs := ld.ResourceLogs().At(i)
+		for j := 0; j < rlogs.ScopeLogs().Len(); j++ {
+			rs := rlogs.ScopeLogs().At(j).LogRecords()
+			for k := 0; k < rs.Len(); k++ {
+				// Copy the record because we mutate it (level attribute, label
+				// removal) and must not alter the shared pipeline data.
+				log := plog.NewLogRecord()
+				rs.At(k).CopyTo(log)
+
+				// adds level attribute from log.severityNumber
+				addLogLevelAttributeAndHint(log)
+
+				format := getFormatFromFormatHint(log.Attributes(), rlogs.Resource().Attributes())
+				if e.format != "" {
+					format = e.format
+				}
+
+				// The resource is read-only here, so pass the shared one to the
+				// label merge instead of copying it for every record.
+				mergedLabels := e.convertAttributesAndMerge(log.Attributes(), rlogs.Resource().Attributes())
+				removeAttributes(log.Attributes(), mergedLabels)
+
+				// The json and logfmt lines render resource attributes, and they
+				// need the label-promoted ones removed first. Deep-copy and prune the
+				// resource only for those formats; the raw (default) format never reads
+				// it, so skip the per-record copy entirely on the hot path (see #92).
+				resource := rlogs.Resource()
+				if format == formatLogfmt || format == formatJSON {
+					resource = pcommon.NewResource()
+					rlogs.Resource().CopyTo(resource)
+					removeAttributes(resource.Attributes(), mergedLabels)
+				}
+
+				fingerprint := mergedLabels.Fingerprint()
+				sample, err := convertLogToSample(fingerprint, log, resource, format)
+				if err != nil {
+					return nil, nil, fmt.Errorf("convertLogToSample error: %w", err)
+				}
+				samples = append(samples, sample)
+
+				timeSerie, err := convertLogToTimeSerie(fingerprint, log, mergedLabels)
+				if err != nil {
+					return nil, nil, fmt.Errorf("convertLogToTimeSerie error: %w", err)
+				}
+				timeSeries = append(timeSeries, timeSerie)
+			}
+		}
+	}
+	return samples, timeSeries, nil
 }
 
 func batchSamplesAndTimeSeries(ctx context.Context, logger *zap.Logger, db clickhouse.Conn, samples []Sample, timeSeries []TimeSerie) error {
