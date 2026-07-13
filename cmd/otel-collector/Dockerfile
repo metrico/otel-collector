@@ -1,6 +1,6 @@
 # Builder runs on $BUILDPLATFORM and cross-compiles for $TARGETPLATFORM
 # so multi-arch builds don't go through QEMU emulation.
-FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
