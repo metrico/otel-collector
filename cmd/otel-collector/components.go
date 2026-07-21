@@ -159,7 +159,7 @@ import (
 	"go.uber.org/multierr"
 
 	"github.com/metrico/otel-collector/exporter/clickhouseprofileexporter"
-	"github.com/metrico/otel-collector/exporter/qrynexporter"
+	"github.com/metrico/otel-collector/exporter/gigapipeexporter"
 	"github.com/metrico/otel-collector/receiver/chstatsreceiver"
 	"github.com/metrico/otel-collector/receiver/pyroscopereceiver"
 )
@@ -310,7 +310,8 @@ func components() (otelcol.Factories, error) {
 	}
 
 	exporters := []exporter.Factory{
-		qrynexporter.NewFactory(),
+		gigapipeexporter.NewFactory(),
+		gigapipeexporter.NewFactoryQryn(),
 		clickhouseprofileexporter.NewFactory(),
 		fileexporter.NewFactory(),
 		kafkaexporter.NewFactory(),
