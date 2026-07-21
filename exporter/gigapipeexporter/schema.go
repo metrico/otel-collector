@@ -110,7 +110,7 @@ func TracesTagsV2InputSQL(clustered bool) string {
     duration)`, dist)
 }
 
-// Note: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
+// Note: https://github.com/metrico/gigapipe/blob/master/ctrl/qryn/sql/traces.sql
 // We need to align with the schema here.
 //
 // CREATE TABLE IF NOT EXISTS traces_input (
