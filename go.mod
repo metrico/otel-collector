@@ -1,6 +1,6 @@
 module github.com/metrico/otel-collector
 
-go 1.26.4
+go 1.26.5
 
 require (
 	connectrpc.com/connect v1.16.2
