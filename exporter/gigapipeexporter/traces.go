@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package qrynexporter
+package gigapipeexporter
 
 import (
 	"context"
@@ -230,11 +230,11 @@ func (e *tracesExporter) pushTraceData(ctx context.Context, td ptrace.Traces) er
 	_ctx := context.WithValue(ctx, clusterKey, e.cluster)
 	start := time.Now()
 	if err := e.exportResourceSapns(_ctx, td.ResourceSpans()); err != nil {
-		otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError, dataTypeTraces)))
+		otelcolExporterGigapipeBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError, dataTypeTraces)))
 		e.logger.Error(fmt.Sprintf("failed to insert batch: [%s]", err.Error()))
 		return err
 	}
-	otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeSuccess, dataTypeTraces)))
+	otelcolExporterGigapipeBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeSuccess, dataTypeTraces)))
 	e.logger.Debug("pushTraceData", zap.Int("spanCount", td.SpanCount()), zap.String("cost", time.Since(start).String()))
 	return nil
 }

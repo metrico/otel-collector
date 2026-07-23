@@ -16,7 +16,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// schema reference: https://github.com/metrico/qryn/blob/master/lib/db/maintain/scripts.js
+// schema reference: https://github.com/metrico/gigapipe/blob/master/ctrl/qryn/sql/profiles.sql
 const (
 	columnTimestampNs      = "timestamp_ns"
 	columnType             = "type"

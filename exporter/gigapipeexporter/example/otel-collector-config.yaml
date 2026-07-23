@@ -56,7 +56,7 @@ processors:
         action: update
         new_name: traces_spanmetrics_latency
 exporters:
-  qryn:
+  gigapipe:
     dsn: tcp://clickhouse-server:9000/cloki?username=qryn&password=demo
     timeout: 10s
     sending_queue:
@@ -82,13 +82,13 @@ service:
     logs:
       receivers: [fluentforward, otlp]
       processors: [memory_limiter, resourcedetection/system, batch]
-      exporters: [qryn]
+      exporters: [gigapipe]
     traces:
       receivers: [otlp]
       processors: [resourcedetection/system, batch]
-      exporters: [qryn, spanmetrics, servicegraph]
+      exporters: [gigapipe, spanmetrics, servicegraph]
     metrics:
       receivers: [otlp, servicegraph, spanmetrics]
       processors:
         [memory_limiter, resourcedetection/system, metricstransform, batch]
-      exporters: [qryn]
+      exporters: [gigapipe]

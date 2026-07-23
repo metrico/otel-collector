@@ -1,4 +1,4 @@
-package qrynexporter
+package gigapipeexporter
 
 import (
 	"context"
@@ -507,11 +507,11 @@ func (e *metricsExporter) pushMetricsData(ctx context.Context, md pmetric.Metric
 	}
 
 	if err := batchSamplesAndTimeSeries(context.WithValue(ctx, clusterKey, e.cluster), e.logger, e.db, samples, timeSeries); err != nil {
-		otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError, dataTypeMetrics)))
+		otelcolExporterGigapipeBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeError, dataTypeMetrics)))
 		e.logger.Error(fmt.Sprintf("failed to insert batch: [%s]", err.Error()))
 		return err
 	}
-	otelcolExporterQrynBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeSuccess, dataTypeMetrics)))
+	otelcolExporterGigapipeBatchInsertDurationMillis.Record(ctx, time.Now().UnixMilli()-start.UnixMilli(), metric.WithAttributeSet(*newOtelcolAttrSetBatch(errorCodeSuccess, dataTypeMetrics)))
 	e.logger.Debug("pushMetricsData", zap.Int("samples", len(samples)), zap.Int("timeseries", len(timeSeries)), zap.String("cost", time.Since(start).String()))
 	return nil
 }

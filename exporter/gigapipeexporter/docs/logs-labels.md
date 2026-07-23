@@ -37,7 +37,7 @@ Checked independently for each bag; works via config (whole pipeline) or per-pay
 
    ```yaml
    exporters:
-     qryn:
+     gigapipe:
        dsn: tcp://localhost:9000/?database=cloki
        clustered_clickhouse: false
        logs:

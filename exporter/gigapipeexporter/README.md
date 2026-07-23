@@ -42,7 +42,7 @@ receivers:
   examplereceiver:
 
 exporters:
-  qryn:
+  gigapipe:
     dsn: tcp://localhost:9000/?database=cloki
     clustered_clickhouse: false
 
@@ -50,8 +50,12 @@ service:
   pipelines:
     traces:
       receivers: [examplereceiver]
-      exporters: [qryn]
+      exporters: [gigapipe]
 ```
+
+> **Note:** the `qryn` exporter type is a deprecated alias for `gigapipe`.
+> Existing `qryn:` configurations keep working but log a deprecation warning;
+> use `gigapipe` in new configurations.
 
 [beta]:https://github.com/open-telemetry/opentelemetry-collector#beta
 [contrib]:https://github.com/open-telemetry/opentelemetry-collector-releases/tree/main/distributions/otelcol-contrib

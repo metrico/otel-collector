@@ -1,4 +1,4 @@
-package qrynexporter
+package gigapipeexporter
 
 import (
 	"path/filepath"
