@@ -51,7 +51,7 @@ type tracesExporter struct {
 	logger *zap.Logger
 	meter  metric.Meter
 
-	db               clickhouse.Conn
+	db               chConn
 	cluster          bool
 	clientSide       bool
 	tracePayloadType string

@@ -34,7 +34,7 @@ type logsExporter struct {
 	logger *zap.Logger
 	meter  metric.Meter
 
-	db clickhouse.Conn
+	db chConn
 
 	attributeLabels      string
 	resourceLabels       string
@@ -501,7 +501,7 @@ func (e *logsExporter) buildSamplesAndTimeSeries(ld plog.Logs) ([]Sample, []Time
 	return samples, timeSeries, nil
 }
 
-func batchSamplesAndTimeSeries(ctx context.Context, logger *zap.Logger, db clickhouse.Conn, samples []Sample, timeSeries []TimeSerie) error {
+func batchSamplesAndTimeSeries(ctx context.Context, logger *zap.Logger, db chConn, samples []Sample, timeSeries []TimeSerie) error {
 	// The caller injects the cluster flag via clusterKey. A missing flag can only
 	// mean a context-propagation bug (see #109). Degrading to non-clustered would
 	// steer inserts at the wrong schema and fail anyway, so treat it as a hard

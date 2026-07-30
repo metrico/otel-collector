@@ -7,6 +7,22 @@
 | Distributions            | [Gigapipe]            |
 
 
+# Schema model
+
+This exporter writes the Gigapipe/qryn **polyglot fingerprint schema**
+(`samples_v3` + `time_series` keyed by a Loki-style fingerprint; `tempo_traces` +
+`tempo_traces_attrs_gin`; Prometheus-compliant metric names and labels), so a
+single ClickHouse instance is queryable through the Loki, Prometheus, Tempo and
+Pyroscope APIs served by [Gigapipe](https://github.com/metrico/gigapipe).
+
+This is a different goal from the generic contrib
+[`clickhouseexporter`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter),
+which writes generic OTel tables intended to be queried as ClickHouse SQL. Choose
+`clickhouseexporter` to query ClickHouse directly; choose this exporter to serve
+the LogQL/PromQL/Tempo/Pyroscope query surface. See
+[Schema model, and how this differs from `clickhouseexporter`](docs/schema.md).
+
+
 # Configuration options:
 - `dsn` (required): Data Source Name for Clickhouse.
   - Example: `tcp://localhost:9000/qryn`

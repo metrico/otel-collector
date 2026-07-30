@@ -40,6 +40,27 @@ func createLogsWithObserver(t *testing.T, factory exporter.Factory) *observer.Ob
 	return logs
 }
 
+// TestFactoryCreateAllSignals exercises the three create funcs (and thus the
+// exporter constructors + initMetrics) end to end with the default config.
+// clickhouse.Open is lazy, so no live server is required.
+func TestFactoryCreateAllSignals(t *testing.T) {
+	factory := NewFactory()
+	set := exportertest.NewNopSettings(factory.Type())
+	cfg := factory.CreateDefaultConfig()
+
+	tr, err := factory.CreateTraces(context.Background(), set, cfg)
+	require.NoError(t, err)
+	require.NoError(t, tr.Shutdown(context.Background()))
+
+	lg, err := factory.CreateLogs(context.Background(), set, cfg)
+	require.NoError(t, err)
+	require.NoError(t, lg.Shutdown(context.Background()))
+
+	me, err := factory.CreateMetrics(context.Background(), set, cfg)
+	require.NoError(t, err)
+	require.NoError(t, me.Shutdown(context.Background()))
+}
+
 // TestQrynAliasLogsDeprecationWarning verifies the deprecated "qryn" factory
 // logs a deprecation warning on use, and the "gigapipe" factory does not.
 func TestQrynAliasLogsDeprecationWarning(t *testing.T) {
