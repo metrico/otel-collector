@@ -31,7 +31,7 @@ type metricsExporter struct {
 	logger *zap.Logger
 	meter  metric.Meter
 
-	db clickhouse.Conn
+	db chConn
 
 	namespace string
 	cluster   bool
