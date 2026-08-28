@@ -1,14 +1,11 @@
 receivers:
   fluentforward:
     endpoint: 0.0.0.0:24224
+  prometheus:
   otlp:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
-  otlp/dummy:
-    protocols:
-      grpc:
-        endpoint: 'localhost:12345'
   pyroscopereceiver:
 
 processors:
@@ -23,22 +20,6 @@ processors:
     detectors: ['system']
     system:
       hostname_sources: ['os']
-  spanmetrics:
-    metrics_exporter: 'otlp'
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
-    dimensions_cache_size: 1500
-    dimensions:
-      - name: http.method
-        default: GET
-      - name: http.status_code
-      - name: span.name
-  servicegraph:
-    metrics_exporter: 'otlp'
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
-    dimensions: [cluster, namespace]
-    store:
-      ttl: 2s
-      max_items: 200
   metricstransform:
     transforms:
       - include: calls_total
@@ -51,6 +32,24 @@ processors:
       - include: latency
         action: update
         new_name: traces_spanmetrics_latency
+
+connectors:
+  spanmetrics:
+    histogram:
+      explicit:
+        buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
+    dimensions_cache_size: 1500
+    dimensions:
+      - name: http.method
+        default: GET
+      - name: http.status_code
+      - name: span.name
+  servicegraph:
+    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
+    dimensions: [cluster, namespace]
+    store:
+      ttl: 2s
+      max_items: 200
 
 exporters:
   qryn:
@@ -86,6 +85,7 @@ extensions:
   zpages:
   memory_ballast:
     size_mib: 1000
+
 service:
   telemetry:
     metrics:
@@ -104,17 +104,10 @@ service:
       exporters: [clickhouseprofileexporter]
     traces:
       receivers: [otlp]
-      processors: [resourcedetection/system, spanmetrics, batch]
-      exporters: [qryn]
-    traces/servicegraph:
-      receivers: [otlp]
-      processors: [servicegraph]
-      exporters: [otlp]
-    metrics/spanmetrics:
-      receivers: [otlp/dummy]
-      exporters: [otlp]
+      processors: [resourcedetection/system, batch]
+      exporters: [qryn, servicegraph, spanmetrics]
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, servicegraph, spanmetrics]
       processors:
         [memory_limiter, resourcedetection/system, metricstransform, batch]
       exporters: [qryn]

@@ -40,6 +40,8 @@ type logsExporter struct {
 	resourceLabels  string
 	format          string
 	cluster         bool
+
+	distinguishLogsMetrics int
 }
 
 func newLogsExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSettings) (*logsExporter, error) {
@@ -59,6 +61,8 @@ func newLogsExporter(logger *zap.Logger, cfg *Config, set *exporter.CreateSettin
 		attributeLabels: cfg.Logs.AttributeLabels,
 		resourceLabels:  cfg.Logs.ResourceLabels,
 		cluster:         cfg.ClusteredClickhouse,
+
+		distinguishLogsMetrics: cfg.DistinguishLogsMetrics,
 	}
 	if err := initMetrics(exp.meter); err != nil {
 		exp.logger.Error(fmt.Sprintf("failed to init metrics: %s", err.Error()))
@@ -371,7 +375,7 @@ func convertLogToLine(log plog.LogRecord, res pcommon.Resource, format string) (
 
 }
 
-func convertLogToSample(fingerprint model.Fingerprint, log plog.LogRecord, res pcommon.Resource, format string) (Sample, error) {
+func convertLogToSample(fingerprint model.Fingerprint, log plog.LogRecord, res pcommon.Resource, format string, logType int) (Sample, error) {
 	line, err := convertLogToLine(log, res, format)
 	if err != nil {
 		return Sample{}, err
@@ -380,10 +384,11 @@ func convertLogToSample(fingerprint model.Fingerprint, log plog.LogRecord, res p
 		Fingerprint: uint64(fingerprint),
 		TimestampNs: timestampFromLogRecord(log).UnixNano(),
 		String:      line,
+		Type:        logType,
 	}, nil
 }
 
-func convertLogToTimeSerie(fingerprint model.Fingerprint, log plog.LogRecord, labelSet model.LabelSet) (TimeSerie, error) {
+func convertLogToTimeSerie(fingerprint model.Fingerprint, log plog.LogRecord, labelSet model.LabelSet, logType int) (TimeSerie, error) {
 	labelsJSON, err := json.Marshal(labelSet)
 	if err != nil {
 		return TimeSerie{}, fmt.Errorf("marshal mergedLabels err: %w", err)
@@ -393,6 +398,7 @@ func convertLogToTimeSerie(fingerprint model.Fingerprint, log plog.LogRecord, la
 		Fingerprint: uint64(fingerprint),
 		Labels:      string(labelsJSON),
 		Name:        string(labelSet[model.MetricNameLabel]),
+		Type:        logType,
 	}
 	return timeSerie, nil
 }
@@ -425,14 +431,19 @@ func (e *logsExporter) pushLogsData(ctx context.Context, ld plog.Logs) error {
 				removeAttributes(log.Attributes(), mergedLabels)
 				removeAttributes(resource.Attributes(), mergedLabels)
 
+				logType := 0
+				if e.distinguishLogsMetrics == 1 {
+					logType = 1 // All logs are type 1 as per the specification
+				}
+
 				fingerprint := mergedLabels.Fingerprint()
-				sample, err := convertLogToSample(fingerprint, log, resource, format)
+				sample, err := convertLogToSample(fingerprint, log, resource, format, logType)
 				if err != nil {
 					return fmt.Errorf("convertLogToSample error: %w", err)
 				}
 				samples = append(samples, sample)
 
-				timeSerie, err := convertLogToTimeSerie(fingerprint, log, mergedLabels)
+				timeSerie, err := convertLogToTimeSerie(fingerprint, log, mergedLabels, logType)
 				if err != nil {
 					return fmt.Errorf("convertLogToTimeSerie error: %w", err)
 				}

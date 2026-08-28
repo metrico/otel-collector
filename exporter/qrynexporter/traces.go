@@ -119,15 +119,19 @@ func attributeMapToStringMap(attrMap pcommon.Map) map[string]string {
 	return rawMap
 }
 
-func aggregateSpanTags(span ptrace.Span, tt map[string]string) map[string]string {
+func aggregateSpanTags(span ptrace.Span, resource pcommon.Resource, tt map[string]string) map[string]string {
 	tags := make(map[string]string)
 	for key, val := range tt {
 		tags[key] = val
 	}
-	spanTags := attributeMapToStringMap(span.Attributes())
-	for key, val := range spanTags {
-		tags[key] = val
-	}
+	span.Attributes().Range(func(key string, val pcommon.Value) bool {
+		tags[key] = val.AsString()
+		return true
+	})
+	resource.Attributes().Range(func(key string, val pcommon.Value) bool {
+		tags[key] = val.AsString()
+		return true
+	})
 	return tags
 }
 
@@ -243,13 +247,6 @@ func extractServiceName(tags map[string]string) string {
 	return serviceName
 }
 
-func mergeAttributes(span ptrace.Span, resource pcommon.Resource) {
-	resource.Attributes().Range(func(k string, v pcommon.Value) bool {
-		span.Attributes().PutStr(k, v.AsString())
-		return true
-	})
-}
-
 func sliceToArray(vs pcommon.Slice) []*commonv1.AnyValue {
 	var anyValues []*commonv1.AnyValue
 	for i := 0; i < vs.Len(); i++ {
@@ -357,9 +354,8 @@ func marshalSpanToJSON(span ptrace.Span) ([]byte, error) {
 }
 
 func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName string, tags map[string]string) (*Trace, error) {
-	mergeAttributes(span, resource)
 	durationNano := uint64(span.EndTimestamp() - span.StartTimestamp())
-	tags = aggregateSpanTags(span, tags)
+	tags = aggregateSpanTags(span, resource, tags)
 	tags["service.name"] = serviceName
 	tags["name"] = span.Name()
 	tags["otel.status_code"] = span.Status().Code().String()
