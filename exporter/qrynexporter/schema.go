@@ -22,15 +22,15 @@ import (
 var (
 	tracesInputSQL = func(clustered bool) string {
 		return `INSERT INTO traces_input (
-  trace_id, 
-  span_id, 
-  parent_id, 
-  name, 
-  timestamp_ns, 
-  duration_ns, 
+  trace_id,
+  span_id,
+  parent_id,
+  name,
+  timestamp_ns,
+  duration_ns,
   service_name,
-  payload_type, 
-  payload, 
+  payload_type,
+  payload,
   tags)`
 	}
 	samplesSQL = func(clustered bool) string {
@@ -41,7 +41,7 @@ var (
 		return fmt.Sprintf(`INSERT INTO samples_v3%s (
   fingerprint,
   timestamp_ns,
-  value, 
+  value,
   string,
   type)`, dist)
 	}
@@ -51,7 +51,7 @@ var (
 			dist = "_dist"
 		}
 		return fmt.Sprintf(`INSERT INTO time_series%s (
-  date, 
+  date,
   fingerprint,
   labels,
   name,

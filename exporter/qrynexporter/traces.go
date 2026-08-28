@@ -45,9 +45,8 @@ var delegate = &protojson.MarshalOptions{
 
 // tracesExporter for writing spans to ClickHouse
 type tracesExporter struct {
-	logger *zap.Logger
-	meter  metric.Meter
-
+	logger  *zap.Logger
+	meter   metric.Meter
 	db      *sql.DB
 	cluster bool
 }
@@ -117,15 +116,22 @@ func attributeMapToStringMap(attrMap pcommon.Map) map[string]string {
 	return rawMap
 }
 
-func aggregateSpanTags(span ptrace.Span, tt map[string]string) map[string]string {
+func aggregateSpanTags(span ptrace.Span, resource pcommon.Resource, tt map[string]string) map[string]string {
 	tags := make(map[string]string)
 	for key, val := range tt {
 		tags[key] = val
 	}
-	spanTags := attributeMapToStringMap(span.Attributes())
-	for key, val := range spanTags {
-		tags[key] = val
-	}
+
+	span.Attributes().Range(func(key string, val pcommon.Value) bool {
+		tags[key] = val.AsString()
+		return true
+	})
+
+	resource.Attributes().Range(func(key string, val pcommon.Value) bool {
+		tags[key] = val.AsString()
+		return true
+	})
+
 	return tags
 }
 
@@ -137,7 +143,6 @@ func (e *tracesExporter) exportSpans(
 	tags map[string]string,
 	sqlBase string,
 ) error {
-	tracesInputs := make([]Trace, 0, spans.Len())
 	for i := 0; i < spans.Len(); i++ {
 		span := spans.At(i)
 		spanLinksToTags(span.Links(), tags)
@@ -146,9 +151,12 @@ func (e *tracesExporter) exportSpans(
 			e.logger.Error("convertTracesInput", zap.Error(err))
 			continue
 		}
-		tracesInputs = append(tracesInputs, *tracesInput)
+		if err := executeBatchInsert(context.Background(), batch, tracesInput, sqlBase); err != nil {
+			e.logger.Error("executeBatchInsert failed", zap.Error(err))
+			return err
+		}
 	}
-	return executeBatchInsert(context.Background(), batch, tracesInputs, sqlBase)
+	return nil
 }
 
 func extractScopeTags(il pcommon.InstrumentationScope, tags map[string]string) {
@@ -163,7 +171,6 @@ func extractScopeTags(il pcommon.InstrumentationScope, tags map[string]string) {
 func (e *tracesExporter) exportResourceSpans(ctx context.Context, resourceSpans ptrace.ResourceSpansSlice) error {
 	isCluster := ctx.Value("cluster").(bool)
 	sqlBase := tracesInputSQL(isCluster)
-
 	return withTransaction(ctx, e.db, func(batch *sql.Tx) error {
 		for i := 0; i < resourceSpans.Len(); i++ {
 			rs := resourceSpans.At(i)
@@ -212,9 +219,7 @@ func resourceToServiceNameAndAttributeMap(resource pcommon.Resource) (string, ma
 		tags[k] = v.AsString()
 		return true
 	})
-
 	serviceName := extractServiceName(tags)
-
 	return serviceName, tags
 }
 
@@ -234,17 +239,10 @@ func extractServiceName(tags map[string]string) string {
 	return serviceName
 }
 
-func mergeAttributes(span ptrace.Span, resource pcommon.Resource) {
-	resource.Attributes().Range(func(k string, v pcommon.Value) bool {
-		span.Attributes().PutStr(k, v.AsString())
-		return true
-	})
-}
-
 func sliceToArray(vs pcommon.Slice) []*commonv1.AnyValue {
 	var anyValues []*commonv1.AnyValue
 	for i := 0; i < vs.Len(); i++ {
-		anyValues = append(anyValues, valueToOtlpAnyVaule(vs.At(i)))
+		anyValues = append(anyValues, valueToOtlpAnyValue(vs.At(i)))
 	}
 	return anyValues
 }
@@ -254,7 +252,7 @@ func mapToKeyValueList(m pcommon.Map) []*commonv1.KeyValue {
 	m.Range(func(k string, v pcommon.Value) bool {
 		keyValues = append(keyValues, &commonv1.KeyValue{
 			Key:   k,
-			Value: valueToOtlpAnyVaule(v),
+			Value: valueToOtlpAnyValue(v),
 		})
 		return true
 	})
@@ -268,7 +266,7 @@ func ensureUTF8(s string) string {
 	return fmt.Sprintf("invalid utf-8: %q", s)
 }
 
-func valueToOtlpAnyVaule(v pcommon.Value) *commonv1.AnyValue {
+func valueToOtlpAnyValue(v pcommon.Value) *commonv1.AnyValue {
 	switch v.Type() {
 	case pcommon.ValueTypeStr:
 		return &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: ensureUTF8(v.Str())}}
@@ -289,7 +287,7 @@ func valueToOtlpAnyVaule(v pcommon.Value) *commonv1.AnyValue {
 	}
 }
 
-func spanLinkSlickToSpanLinks(spanLinks ptrace.SpanLinkSlice) []*tracev1.Span_Link {
+func spanLinkSliceToSpanLinks(spanLinks ptrace.SpanLinkSlice) []*tracev1.Span_Link {
 	links := make([]*tracev1.Span_Link, 0, spanLinks.Len())
 	for i := 0; i < spanLinks.Len(); i++ {
 		link := spanLinks.At(i)
@@ -337,7 +335,7 @@ func marshalSpanToJSON(span ptrace.Span) ([]byte, error) {
 		DroppedAttributesCount: span.DroppedAttributesCount(),
 		Events:                 spanEventSliceToSpanEvents(span.Events()),
 		DroppedEventsCount:     span.DroppedEventsCount(),
-		Links:                  spanLinkSlickToSpanLinks(span.Links()),
+		Links:                  spanLinkSliceToSpanLinks(span.Links()),
 		DroppedLinksCount:      span.DroppedLinksCount(),
 		Status: &tracev1.Status{
 			Code:    tracev1.Status_StatusCode(span.Status().Code()),
@@ -348,9 +346,8 @@ func marshalSpanToJSON(span ptrace.Span) ([]byte, error) {
 }
 
 func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName string, tags map[string]string) (*Trace, error) {
-	mergeAttributes(span, resource)
 	durationNano := uint64(span.EndTimestamp() - span.StartTimestamp())
-	tags = aggregateSpanTags(span, tags)
+	tags = aggregateSpanTags(span, resource, tags)
 	tags["service.name"] = serviceName
 	tags["name"] = span.Name()
 	tags["otel.status_code"] = span.Status().Code().String()
@@ -360,6 +357,7 @@ func convertTracesInput(span ptrace.Span, resource pcommon.Resource, serviceName
 	for k, v := range tags {
 		mTags = append(mTags, []string{k, v})
 	}
+
 	payload, err := marshalSpanToJSON(span)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal span: %w", err)
