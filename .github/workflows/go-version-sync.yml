@@ -109,8 +109,6 @@ jobs:
             - `cmd/otel-collector/Dockerfile` — updated `golang` builder image
             - `go.sum` — regenerated via `go mod tidy`
 
-            > **Manual step (on minor bumps only):** update `go-version` in `.github/workflows/lint-and-test.yml` to `'${{ steps.go-latest.outputs.version_mm }}'` — workflow files cannot be updated automatically due to `GITHUB_TOKEN` restrictions.
-
             ---
             *Keeping the project up-to-date with Go releases ensures compatibility and security enhancements.*
           branch: chore/go-version-update
