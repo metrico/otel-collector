@@ -1,6 +1,6 @@
 module github.com/metrico/otel-collector
 
-go 1.27.0
+go 1.27.1
 
 require (
 	bitbucket.org/atlassian/go-asap/v2 v2.15.3 // indirect
