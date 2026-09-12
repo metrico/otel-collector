@@ -17,5 +17,5 @@
 .vscode
 .DS_Store
 .idea
-otel-collector
+/otel-collector
 CLAUDE.md

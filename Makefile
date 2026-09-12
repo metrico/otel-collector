@@ -21,7 +21,7 @@ install-tools:
 .DEFAULT_GOAL := test-and-lint
 
 .PHONY: test-and-lint
-test-and-lint: test fmt lint
+test-and-lint: test fmt lint validate-config
 
 .PHONY: test
 test:

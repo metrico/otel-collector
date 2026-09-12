@@ -57,6 +57,23 @@ otel-collector:
     restart: on-failure
 ```
 
+#### Versions and rollback
+
+Every push to `main` publishes two ghcr tags -- `latest` and an immutable
+version tag (`0.0.52`, `0.0.53`, ...) -- and a matching
+[GitHub Release](https://github.com/metrico/otel-collector/releases) with the
+changelog for that version.
+
+Production deployments should pin the version tag rather than track `latest`:
+
+```yaml
+image: ghcr.io/metrico/gigapipe-otel-collector:0.0.52
+```
+
+If a new build misbehaves, roll back by pointing at the previous release tag.
+Version tags are never overwritten, so a rollback always lands on the exact
+image that was tested.
+
 ### Config Template [view](https://www.otelbin.io/s/55bd7b91-0c89-47d4-b84c-015ad2a76790)
 The following template enables popular log, metric and tracing ingestion formats supported by Gigapipe
 
