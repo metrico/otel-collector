@@ -28,11 +28,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Unit tests
-        run: make test
-
-      - name: Validate example config against the built binary
-        run: make validate-config
+      - name: Tests, binary start-up and config validation
+        run: make smoke
 
   tag_bump:
     needs: smoke_test
@@ -107,7 +104,9 @@ jobs:
   # have no discoverable list of versions to pin back to (#167).
   release:
     needs: [tag_bump, build]
-    runs-on: self-hosted
+    # ubuntu-latest rather than self-hosted: this step needs the gh CLI, which
+    # is preinstalled on GitHub-hosted runners but not guaranteed on ours.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
