@@ -9,8 +9,30 @@ on:
 env:
   REGISTRY: ghcr.io
 
+# contents: write for the tag bump and the GitHub Release; packages: write to
+# push to ghcr. Declaring these explicitly means the defaults can tighten
+# without silently breaking this workflow.
+permissions:
+  contents: write
+  packages: write
+
 jobs:
+  # Gate every push to `latest` on the binary actually starting. A dependency
+  # that panics in init() (see #167) never reaches the registry.
+  smoke_test:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Tests, binary start-up and config validation
+        run: make smoke
+
   tag_bump:
+    needs: smoke_test
     runs-on: ubuntu-latest
     outputs:
       new_tag: ${{ steps.tag_bump.outputs.new_tag }}
@@ -26,7 +48,7 @@ jobs:
           PRERELEASE: true
 
   build:
-    needs: tag_bump
+    needs: [smoke_test, tag_bump]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -51,6 +73,22 @@ jobs:
             latest
             ${{ needs.tag_bump.outputs.new_tag }}
 
+      # Build amd64 only and load it locally, so the image is exercised before
+      # anything is published. The layer cache is reused by the push below.
+      - name: Build image for smoke test
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./cmd/otel-collector/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: gigapipe-otel-collector:smoke
+
+      - name: Smoke test the image starts
+        run: |
+          docker run --rm gigapipe-otel-collector:smoke --help > /dev/null
+          docker run --rm gigapipe-otel-collector:smoke components > /dev/null
+
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v5
         with:
@@ -60,3 +98,43 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  # Publish a GitHub Release for the tag that was just built. Without this the
+  # version tags exist only in git and on ghcr, so users hitting a bad `latest`
+  # have no discoverable list of versions to pin back to (#167).
+  release:
+    needs: [tag_bump, build]
+    # ubuntu-latest rather than self-hosted: this step needs the gh CLI, which
+    # is preinstalled on GitHub-hosted runners but not guaranteed on ours.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.tag_bump.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+
+          # Generate notes via the API rather than `gh release create
+          # --generate-notes`, so the changelog and the hand-written section
+          # below are composed here instead of relying on how gh merges them.
+          gh api "repos/$REPO/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            --jq .body > notes.md
+
+          cat >> notes.md <<EOF
+
+          ## Container image
+
+          \`\`\`
+          docker pull ghcr.io/metrico/gigapipe-otel-collector:$TAG
+          \`\`\`
+
+          Every release is published as an immutable ghcr tag. If \`:latest\`
+          breaks, pin to this tag -- or any earlier release -- to roll back.
+          EOF
+
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md

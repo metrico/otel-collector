@@ -21,11 +21,23 @@ install-tools:
 .DEFAULT_GOAL := test-and-lint
 
 .PHONY: test-and-lint
-test-and-lint: test fmt lint
+test-and-lint: test fmt lint validate-config
 
 .PHONY: test
 test:
 	go test -count=1 -v -race -cover ./...
+
+# Publish gate: what must hold before an image reaches the registry -- the
+# packages compile and pass, the binary starts, and the example config still
+# parses. Deliberately no -race: the race detector needs cgo, the self-hosted
+# runners have no C compiler, and a data race is not what this gate is for.
+# Pull requests still run the full -race suite via test-and-lint.
+.PHONY: smoke
+smoke: test-norace validate-config
+
+.PHONY: test-norace
+test-norace:
+	go test -count=1 ./...
 
 .PHONY: build
 build:
