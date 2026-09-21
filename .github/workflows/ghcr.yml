@@ -20,7 +20,7 @@ jobs:
   # Gate every push to `latest` on the binary actually starting. A dependency
   # that panics in init() (see #167) never reaches the registry.
   smoke_test:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
