@@ -1,0 +1,28 @@
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+
+    # Security updates only, matching how this repository already works: every
+    # Dependabot pull request here so far has been raised by an alert, and no
+    # scheduled version updates have ever run. A limit of 0 keeps it that way --
+    # security pull requests are exempt from this limit and do not count
+    # towards it, so they continue to be raised as normal.
+    open-pull-requests-limit: 0
+
+    groups:
+      # The OpenTelemetry modules share types across module boundaries and make
+      # breaking changes in lockstep, so an alert that moves one of them has to
+      # move its siblings in the same pull request. Bumping otlploggrpc on its
+      # own (#172) pulled otel/log to v0.21.0, where Kind, Value and KeyValue
+      # were removed in favour of attribute.Value, while otlploghttp, stdoutlog
+      # and the otelzap bridge stayed on the removed API -- which broke the
+      # build of cmd/otel-collector. Grouping them makes that failure mode
+      # impossible to raise.
+      opentelemetry:
+        applies-to: security-updates
+        patterns:
+          - "go.opentelemetry.io/*"
