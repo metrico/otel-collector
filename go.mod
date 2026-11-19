@@ -216,6 +216,7 @@ require (
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/cadvisor v0.57.0 // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
+	github.com/google/gnostic v0.7.1 // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
@@ -403,7 +404,7 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/sftp v1.13.10 // indirect
-	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
+	github.com/planetscale/vtprotobuf v0.6.1-0.20250313105119-ba97887b0a25 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/prometheus/alertmanager v0.31.1 // indirect
@@ -591,17 +592,17 @@ require (
 )
 
 require (
-	connectrpc.com/connect v1.16.2
+	connectrpc.com/connect v1.19.1
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
 	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/go-faster/city v1.0.1
 	github.com/go-logfmt/logfmt v0.6.1
-	github.com/google/pprof v0.0.0-20260302011040-a15ffb7f9dcc
+	github.com/google/pprof v0.0.0-20260507013755-92041b743c96
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/jfr-parser v0.9.0
+	github.com/grafana/jfr-parser v0.19.0
 	github.com/grafana/pyroscope-go v1.1.2
-	github.com/grafana/pyroscope/api v0.4.0
+	github.com/grafana/pyroscope/api v1.5.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/confmap/provider/s3provider v0.153.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/confmap/provider/secretsmanagerprovider v0.153.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/connector/countconnector v0.153.0
