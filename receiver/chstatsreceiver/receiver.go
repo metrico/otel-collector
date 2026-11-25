@@ -26,7 +26,6 @@ type chReceiver struct {
 	templates       []*template.Template
 	logger          *zap.Logger
 	cancel          context.CancelFunc
-	ticker          *time.Ticker
 }
 
 func (r *chReceiver) Start(ctx context.Context, _ component.Host) error {
@@ -50,21 +49,36 @@ func (r *chReceiver) Start(ctx context.Context, _ component.Host) error {
 	_ctx, cancel := context.WithCancel(ctx)
 	r.cancel = cancel
 
-	r.ticker = time.NewTicker(r.cfg.Timeout)
-
 	go r.mainLoop(_ctx)
 	return nil
 }
 
+// nextTick returns the middle of the current interval, or of the next one if that
+// has passed. A timer that fires slightly early does not repeat the prev tick.
+func nextTick(prev, now time.Time, interval time.Duration) time.Time {
+	if early := prev.Sub(now); early > 0 && early < interval/2 {
+		now = prev
+	}
+	next := now.Truncate(interval).Add(interval / 2)
+	if !next.After(now) {
+		next = next.Add(interval)
+	}
+	return next
+}
+
 func (r *chReceiver) mainLoop(ctx context.Context) {
+	var tick time.Time
 	for {
+		tick = nextTick(tick, time.Now(), r.cfg.Timeout)
+		timer := time.NewTimer(time.Until(tick))
 		r.logger.Info("tick start")
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			fmt.Println("tick stop")
 			return
-		case <-r.ticker.C:
-			err := r.GetMetrics(ctx)
+		case <-timer.C:
+			err := r.GetMetrics(ctx, tick)
 			if err != nil {
 				r.logger.Error("failed to get metrics", zap.Error(err))
 			}
@@ -73,7 +87,7 @@ func (r *chReceiver) mainLoop(ctx context.Context) {
 	}
 }
 
-func (r *chReceiver) GetMetrics(ctx context.Context) error {
+func (r *chReceiver) GetMetrics(ctx context.Context, tick time.Time) error {
 	g := errgroup.Group{}
 	for _, tpl := range r.templates {
 		_tpl := tpl
@@ -81,7 +95,7 @@ func (r *chReceiver) GetMetrics(ctx context.Context) error {
 			switch r.cfg.Type {
 			case RCV_TYPE_METRICS:
 			case "":
-				return r.getMetricsTemplate(ctx, _tpl)
+				return r.getMetricsTemplate(ctx, _tpl, tick)
 			case RCV_TYPE_LOGS:
 				return r.getLogsTemplate(ctx, _tpl)
 			}
@@ -91,7 +105,7 @@ func (r *chReceiver) GetMetrics(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (r *chReceiver) getMetricsTemplate(ctx context.Context, tpl *template.Template) error {
+func (r *chReceiver) getMetricsTemplate(ctx context.Context, tpl *template.Template, tick time.Time) error {
 	queryBuf := bytes.Buffer{}
 	params := map[string]any{
 		"timestamp_ns": time.Now().UnixNano(),
@@ -131,7 +145,7 @@ func (r *chReceiver) getMetricsTemplate(ctx context.Context, tpl *template.Templ
 			}
 			data.Attributes().PutStr(label[0], label[1])
 		}
-		data.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		data.SetTimestamp(pcommon.NewTimestampFromTime(tick))
 		data.SetDoubleValue(value)
 		select {
 		case <-ctx.Done():
@@ -199,7 +213,6 @@ func (r *chReceiver) getLogsTemplate(ctx context.Context, tpl *template.Template
 func (r *chReceiver) Shutdown(_ context.Context) error {
 	fmt.Println("shutting down")
 	r.cancel()
-	r.ticker.Stop()
 	_ = r.db.Close()
 	return nil
 }
