@@ -26,7 +26,6 @@ type chReceiver struct {
 	templates       []*template.Template
 	logger          *zap.Logger
 	cancel          context.CancelFunc
-	ticker          *time.Ticker
 }
 
 func (r *chReceiver) Start(ctx context.Context, _ component.Host) error {
@@ -50,30 +49,50 @@ func (r *chReceiver) Start(ctx context.Context, _ component.Host) error {
 	_ctx, cancel := context.WithCancel(ctx)
 	r.cancel = cancel
 
-	r.ticker = time.NewTicker(r.cfg.Timeout)
-
 	go r.mainLoop(_ctx)
 	return nil
 }
 
+// nextRun returns the first run after now. Runs are in the middle of each
+// interval of the wall clock. Close to the edge of an interval, the small delays
+// of a run would put two points in one interval and none in the next.
+func nextRun(now time.Time, interval time.Duration) time.Time {
+	next := now.Truncate(interval).Add(interval / 2)
+	if !next.After(now) {
+		next = next.Add(interval)
+	}
+	return next
+}
+
 func (r *chReceiver) mainLoop(ctx context.Context) {
+	next := nextRun(time.Now(), r.cfg.Timeout)
 	for {
 		r.logger.Info("tick start")
+		timer := time.NewTimer(time.Until(next))
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			fmt.Println("tick stop")
 			return
-		case <-r.ticker.C:
-			err := r.GetMetrics(ctx)
+		case <-timer.C:
+			err := r.GetMetrics(ctx, next)
 			if err != nil {
 				r.logger.Error("failed to get metrics", zap.Error(err))
 			}
 		}
 		r.logger.Info("tick end")
+		// The timer can fire slightly before next on the wall clock. Do not run
+		// the same interval twice.
+		now := time.Now()
+		if now.Before(next) {
+			now = next
+		}
+		next = nextRun(now, r.cfg.Timeout)
 	}
 }
 
-func (r *chReceiver) GetMetrics(ctx context.Context) error {
+// GetMetrics runs the queries of the interval that tick belongs to.
+func (r *chReceiver) GetMetrics(ctx context.Context, tick time.Time) error {
 	g := errgroup.Group{}
 	for _, tpl := range r.templates {
 		_tpl := tpl
@@ -81,9 +100,9 @@ func (r *chReceiver) GetMetrics(ctx context.Context) error {
 			switch r.cfg.Type {
 			case RCV_TYPE_METRICS:
 			case "":
-				return r.getMetricsTemplate(ctx, _tpl)
+				return r.getMetricsTemplate(ctx, _tpl, tick)
 			case RCV_TYPE_LOGS:
-				return r.getLogsTemplate(ctx, _tpl)
+				return r.getLogsTemplate(ctx, _tpl, tick)
 			}
 			return nil
 		})
@@ -91,13 +110,17 @@ func (r *chReceiver) GetMetrics(ctx context.Context) error {
 	return g.Wait()
 }
 
-func (r *chReceiver) getMetricsTemplate(ctx context.Context, tpl *template.Template) error {
-	queryBuf := bytes.Buffer{}
-	params := map[string]any{
-		"timestamp_ns": time.Now().UnixNano(),
-		"timestamp_ms": time.Now().UnixMilli(),
-		"timestamp_s":  time.Now().Unix(),
+func queryParams(tick time.Time) map[string]any {
+	return map[string]any{
+		"timestamp_ns": tick.UnixNano(),
+		"timestamp_ms": tick.UnixMilli(),
+		"timestamp_s":  tick.Unix(),
 	}
+}
+
+func (r *chReceiver) getMetricsTemplate(ctx context.Context, tpl *template.Template, tick time.Time) error {
+	queryBuf := bytes.Buffer{}
+	params := queryParams(tick)
 	err := tpl.Execute(&queryBuf, params)
 	wrapErr := func(err error) error {
 		return fmt.Errorf("failed to execute. Query: %s; error: %w", queryBuf.String(), err)
@@ -131,7 +154,9 @@ func (r *chReceiver) getMetricsTemplate(ctx context.Context, tpl *template.Templ
 			}
 			data.Attributes().PutStr(label[0], label[1])
 		}
-		data.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		// The scheduled time, not the time the query returned, so a slow query
+		// cannot move a point to another interval.
+		data.SetTimestamp(pcommon.NewTimestampFromTime(tick))
 		data.SetDoubleValue(value)
 		select {
 		case <-ctx.Done():
@@ -146,13 +171,9 @@ func (r *chReceiver) getMetricsTemplate(ctx context.Context, tpl *template.Templ
 	return nil
 }
 
-func (r *chReceiver) getLogsTemplate(ctx context.Context, tpl *template.Template) error {
+func (r *chReceiver) getLogsTemplate(ctx context.Context, tpl *template.Template, tick time.Time) error {
 	queryBuf := bytes.Buffer{}
-	params := map[string]any{
-		"timestamp_ns": time.Now().UnixNano(),
-		"timestamp_ms": time.Now().UnixMilli(),
-		"timestamp_s":  time.Now().Unix(),
-	}
+	params := queryParams(tick)
 	err := tpl.Execute(&queryBuf, params)
 	wrapErr := func(err error) error {
 		return fmt.Errorf("failed to execute. Query: %s; error: %w", queryBuf.String(), err)
@@ -199,7 +220,6 @@ func (r *chReceiver) getLogsTemplate(ctx context.Context, tpl *template.Template
 func (r *chReceiver) Shutdown(_ context.Context) error {
 	fmt.Println("shutting down")
 	r.cancel()
-	r.ticker.Stop()
 	_ = r.db.Close()
 	return nil
 }

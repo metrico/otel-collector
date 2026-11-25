@@ -27,6 +27,8 @@ such as the host, port, and database name
 The queries are specified as a list of strings.
 - `timeout`: amount of time between two consecutive stats requests iterations. 
 The timeout is specified as the duration value like `20s`, `1m`, etc. 
+Requests run in the middle of each interval of the wall clock (for `15s`: at second 7.5, 22.5, 37.5 and 52.5), and
+metric points carry that time.
 
 ## Clickhouse Queries
 
